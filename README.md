@@ -2,7 +2,7 @@
 
 Skills that delegate coding tasks from your AI assistant to a background agent CLI, isolated in a git worktree, with structured handoff documents and self-healing monitoring.
 
-Works as native skills in **Claude Code** and **Hermes Agent**, and as a universal adapter for any AI tool with shell access.
+Conforms to the [agentskills.io open standard](https://agentskills.io/specification) — install once in `~/.agents/skills/` and every compliant tool picks them up automatically. Also works natively in Claude Code via `~/.claude/skills/`.
 
 ---
 
@@ -25,6 +25,7 @@ The agent works independently while you keep collaborating with your AI assistan
 
 | Skill | Runtime | Quick install |
 |-------|---------|---------------|
+| `delegate-to-any` | auto-selects best available | install any runtime below |
 | `delegate-to-opencode` | [OpenCode](https://opencode.ai) | `npm install -g opencode-ai` |
 | `delegate-to-codex` | [OpenAI Codex CLI](https://github.com/openai/codex) | `npm install -g @openai/codex` |
 | `delegate-to-pi` | [Pi](https://earendil.works) | `bun install -g @earendil-works/pi-coding-agent` |
@@ -37,35 +38,58 @@ The agent works independently while you keep collaborating with your AI assistan
 
 ## Supported host tools
 
-The skills come in three formats. Install the one that matches your tool:
+The skills conform to the [agentskills.io open standard](https://agentskills.io/specification). Install to `~/.agents/skills/` for maximum reach:
 
-| Format | Location | Works in |
-|--------|----------|----------|
-| Claude Code SKILL.md | `delegate-to-*/` | Claude Code CLI · VS Code · Cursor · Windsurf · JetBrains · Desktop · claude.ai/code |
-| Hermes SKILL.md | `hermes-skills/` | Hermes Agent |
-| Generic prompt + script | `adapters/` + `scripts/` | Any AI with bash/terminal access (Copilot, Zed AI, Continue.dev, …) |
+| Format | Install from | Works in |
+|--------|-------------|----------|
+| agentskills.io SKILL.md | `skills/` | OpenCode · OpenAI Codex · pi · Gemini CLI · Kimi · Claude Code · VS Code · Cursor · Windsurf · JetBrains · 40+ other tools |
+| Hermes adapter | `helpers/hermes/` | Hermes Agent (needs explicit `~/.agents/skills/` config — see install guide) |
+| Generic prompt + script | `helpers/adapters/` + `helpers/scripts/` | Any AI with bash/terminal access (Copilot, Zed AI, Continue.dev, …) |
 
-> All Claude Code interfaces (CLI, VS Code extension, Cursor, Windsurf, JetBrains, Desktop app, claude.ai/code) share the same `~/.claude/skills/` directory — install once and every surface picks it up.
+> **`~/.agents/skills/` is the cross-tool standard.** OpenCode, Codex CLI, pi, Gemini CLI, and Kimi all scan it natively. Claude Code uses `~/.claude/skills/` — either install there too or symlink from `~/.agents/skills/`.
 
 ---
 
 ## Quick start
 
-### Claude Code
+### Cross-tool install (recommended)
+
+Installs to `~/.agents/skills/` — works natively in OpenCode, OpenAI Codex, pi, Gemini CLI, Kimi, and any [agentskills.io-compliant tool](https://agentskills.io/clients.md).
 
 ```bash
-# Clone and install globally
 git clone https://github.com/bassem-io/delegate-skills.git
 cd delegate-skills
 
-# Install skills and shared docs (docs/ must be alongside the skill dirs)
-mkdir -p ~/.claude/skills
-cp -r docs ~/.claude/skills/
-for skill in delegate-to-*; do cp -r "$skill" ~/.claude/skills/; done
+# Copy — snapshot at install time
+mkdir -p ~/.agents/skills
+cp -r skills/shared ~/.agents/skills/
+for skill in skills/delegate-to-*; do cp -r "$skill" ~/.agents/skills/; done
 
-# Or symlink to stay in sync
-ln -sf "$(pwd)/docs" ~/.claude/skills/docs
-for skill in delegate-to-*; do ln -sf "$(pwd)/$skill" ~/.claude/skills/$skill; done
+# Or symlink — stays in sync with the repo
+REPO="$(pwd)"
+mkdir -p ~/.agents/skills
+ln -sf "$REPO/skills/shared" ~/.agents/skills/shared
+for skill in skills/delegate-to-*; do
+  ln -sf "$REPO/$skill" ~/.agents/skills/$(basename "$skill")
+done
+```
+
+### Claude Code
+
+Claude Code reads from `~/.claude/skills/`. Install there directly or symlink from the cross-tool location:
+
+```bash
+# Option A: install directly to ~/.claude/skills/
+mkdir -p ~/.claude/skills
+cp -r skills/shared ~/.claude/skills/
+for skill in skills/delegate-to-*; do cp -r "$skill" ~/.claude/skills/; done
+
+# Option B: symlink from the cross-tool location (keeps both in sync)
+mkdir -p ~/.claude/skills
+ln -sf ~/.agents/skills/shared ~/.claude/skills/shared
+for skill in ~/.agents/skills/delegate-to-*; do
+  ln -sf "$skill" ~/.claude/skills/$(basename "$skill")
+done
 ```
 
 Then in any Claude Code session:
@@ -79,7 +103,7 @@ Claude Code writes the handoff document, creates the worktree, launches opencode
 ### Hermes Agent
 
 ```bash
-cp -r hermes-skills/delegate-tasks ~/.hermes/skills/autonomous-ai-agents/
+cp -r helpers/hermes/delegate-tasks ~/.hermes/skills/autonomous-ai-agents/
 ```
 
 ```
@@ -88,12 +112,12 @@ cp -r hermes-skills/delegate-tasks ~/.hermes/skills/autonomous-ai-agents/
 
 ### Any other AI
 
-Copy `adapters/generic-prompt.md` into your AI's system prompt or workspace instructions. It contains the full delegation protocol and all launch commands.
+Copy `helpers/adapters/generic-prompt.md` into your AI's system prompt or workspace instructions. It contains the full delegation protocol and all launch commands.
 
-Or call the script directly from any terminal — after writing a handoff doc to `.opencode/tasks/TASK-1.md`:
+Or call the launcher script directly — after writing a handoff doc to `.opencode/tasks/TASK-1.md`:
 
 ```bash
-bash scripts/delegate.sh opencode TASK-1 1800
+bash helpers/scripts/delegate.sh opencode TASK-1 1800
 ```
 
 ---
@@ -153,41 +177,43 @@ delegate-skills/
 ├── README.md
 ├── AGENTS.md                        # agent-facing conventions and CLI reference table
 ├── TODO.md                          # task ledger (append-only when skills are in use)
-├── docs/
-│   ├── workflow.md                  # shared Steps 0–3 and 5 (all Claude Code skills)
+│
+├── skills/                          # installable skills — copy to ~/.claude/skills/ or ~/.agents/skills/
+│   ├── shared/
+│   │   └── workflow.md              # shared Steps 0–3 and 5 (referenced by all skills as ../shared/workflow.md)
+│   ├── delegate-to-any/SKILL.md     # auto-router: picks best installed runtime
+│   ├── delegate-to-opencode/SKILL.md
+│   ├── delegate-to-codex/SKILL.md
+│   ├── delegate-to-pi/SKILL.md
+│   ├── delegate-to-mimo/SKILL.md
+│   ├── delegate-to-hermes/SKILL.md
+│   ├── delegate-to-kimi/SKILL.md
+│   └── delegate-to-agy/SKILL.md
+│
+├── docs/                            # documentation only
 │   ├── usage.md                     # usage guide, timeout tiers, model overrides
 │   └── install.md                   # full install guide for every tool and format
-├── tests/
-│   ├── run-tests.sh                 # test runner
-│   └── test-structure.sh            # structure validation (139 checks)
 │
-│   Claude Code skills
-├── delegate-to-opencode/SKILL.md
-├── delegate-to-codex/SKILL.md
-├── delegate-to-pi/SKILL.md
-├── delegate-to-mimo/SKILL.md
-├── delegate-to-hermes/SKILL.md
-├── delegate-to-kimi/SKILL.md
-├── delegate-to-agy/SKILL.md
+├── helpers/                         # setup and configure helpers (not skills)
+│   ├── scripts/
+│   │   └── delegate.sh              # portable bash launcher (all 7 runtimes)
+│   ├── adapters/
+│   │   └── generic-prompt.md        # universal prompt for any AI tool
+│   └── hermes/
+│       └── delegate-tasks/SKILL.md  # hermes-native skill (hermes terminal() API format)
 │
-│   Hermes-native skill
-├── hermes-skills/
-│   └── delegate-tasks/SKILL.md
-│
-│   Tool-agnostic adapters
-├── scripts/
-│   └── delegate.sh                  # portable bash launcher (all 7 runtimes)
-└── adapters/
-    └── generic-prompt.md            # universal prompt for any AI tool
+└── tests/                           # test suite
+    ├── run-tests.sh
+    └── test-structure.sh
 ```
 
 ---
 
 ## Documentation
 
-- [`docs/install.md`](docs/install.md) — per-tool install guide, hermes install, kimi, Continue.dev, generic setup
+- [`docs/install.md`](docs/install.md) — per-tool install guide, Hermes, Kimi, Continue.dev, generic setup
 - [`docs/usage.md`](docs/usage.md) — invoking skills, model overrides, timeout tiers, merge workflow
-- [`docs/workflow.md`](docs/workflow.md) — the shared workflow (Steps 0–5) all skills follow
+- [`skills/shared/workflow.md`](skills/shared/workflow.md) — the shared workflow (Steps 0–5) all skills follow
 - [`AGENTS.md`](AGENTS.md) — CLI differences table, known gotchas, conventions for agents editing this repo
 
 ---
@@ -198,7 +224,7 @@ delegate-skills/
 bash tests/run-tests.sh
 ```
 
-Validates structure, frontmatter, workflow references, adapter files, and runtime coverage. No external dependencies.
+Validates structure, frontmatter, workflow references, helper files, and runtime coverage. No external dependencies.
 
 ---
 

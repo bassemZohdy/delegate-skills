@@ -111,11 +111,12 @@ case "$RUNTIME" in
     ;;
 
   mimo)
+    MIMO_HELP=$(mimo run --help 2>&1)
     MIMO_SKIP="" ; MIMO_DIR="" ; MIMO_FILE=""
-    mimo run --help 2>&1 | grep -q "dangerously-skip-permissions" && \
+    echo "$MIMO_HELP" | grep -q "dangerously-skip-permissions" && \
       MIMO_SKIP="--dangerously-skip-permissions"
-    mimo run --help 2>&1 | grep -q -- "--dir"  && MIMO_DIR="--dir $WORK_DIR"
-    mimo run --help 2>&1 | grep -q -- "--file" && MIMO_FILE="--file $TASK_FILE"
+    echo "$MIMO_HELP" | grep -q -- "--dir"  && MIMO_DIR="--dir $WORK_DIR"
+    echo "$MIMO_HELP" | grep -q -- "--file" && MIMO_FILE="--file $TASK_FILE"
     if [ -n "$MIMO_FILE" ]; then
       # shellcheck disable=SC2086
       nohup mimo run "Execute the handoff task." $MIMO_FILE $MIMO_DIR $MIMO_SKIP \

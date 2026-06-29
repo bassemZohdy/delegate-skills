@@ -1,14 +1,25 @@
 ---
 name: delegate-to-kimi
 description: Delegates coding tasks to Kimi Code Agent running in a background process with an isolated git worktree. Tracks all tasks and sub-tasks in TODO.md and periodically reviews completion. Use this whenever you want to hand off implementation, refactoring, test generation, or migration work to Kimi for background execution.
+license: MIT
+compatibility: Requires git, bash, and kimi on PATH.
+metadata:
+  author: Bassem Zohdy
+  version: 1.0.0
+  category: delegation
 disable-model-invocation: true
+argument-hint: "[--model <model-id>] <task description>"
 ---
 
 # Delegate to Kimi
 
 Hands a coding task to Kimi Code in the background with full isolation, structured context, and ongoing review.
 
-Follow the shared workflow in [`../docs/workflow.md`](../docs/workflow.md) for Steps 0–3 and Step 5. This file defines only **Step 4** — the runtime-specific detection and launch logic.
+## Task
+
+$ARGUMENTS
+
+Follow the shared workflow in [`../shared/workflow.md`](../shared/workflow.md) for Steps −1 through 3 and Step 5. This file defines only **Step 4** — the runtime-specific detection and launch logic.
 
 ---
 

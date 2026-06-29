@@ -2,137 +2,171 @@
 
 ## What these files are
 
-This repository contains **skill files** — markdown files with YAML frontmatter that AI tools load at startup to extend their capability. When installed, they add `/delegate-to-<runtime>` commands (or equivalent) to your AI assistant.
-
-The files come in three formats:
+This repository contains **skill files** conforming to the [agentskills.io open standard](https://agentskills.io/specification) (Apache 2.0 / CC-BY-4.0). When installed, they add `/delegate-to-<runtime>` commands (or equivalent slash commands) to your AI assistant.
 
 | Format | Location in this repo | For which tools |
 |--------|----------------------|-----------------|
-| Claude Code SKILL.md | `delegate-to-*/SKILL.md` | Claude Code CLI, VS Code/Cursor/Windsurf/JetBrains/Desktop extensions, claude.ai/code |
-| Hermes SKILL.md | `hermes-skills/*/SKILL.md` | Hermes Agent |
-| Generic prompt | `adapters/generic-prompt.md` | Any AI with bash/terminal access |
-| Core script | `scripts/delegate.sh` | Called by any AI or directly from a terminal |
+| agentskills.io SKILL.md | `skills/delegate-to-*/` | Any tool supporting `~/.agents/skills/` or `~/.claude/skills/` |
+| Hermes adapter | `helpers/hermes/delegate-tasks/` | Hermes Agent (uses its own skill format) |
+| Generic prompt + script | `helpers/adapters/` + `helpers/scripts/` | Any AI with bash/terminal access |
 
 ---
 
-## Concept: where each tool looks for skills
+## The cross-tool install path: `~/.agents/skills/`
 
-Each AI tool has a directory where it reads skills from. You install these files by copying them to the right place for your tool.
+`~/.agents/skills/` is the community-standard interoperability path defined by the agentskills.io spec. Tools that scan it natively:
 
-| Tool | Skill directory | Invocation |
-|------|----------------|------------|
-| Claude Code CLI | `~/.claude/skills/` (global) or `.claude/skills/` (project) | `/delegate-to-opencode` |
-| Claude Code — VS Code extension | Same as CLI (`~/.claude/skills/`) | `/delegate-to-opencode` |
-| Claude Code — Cursor extension | Same as CLI (`~/.claude/skills/`) | `/delegate-to-opencode` |
-| Claude Code — Windsurf extension | Same as CLI (`~/.claude/skills/`) | `/delegate-to-opencode` |
-| Claude Code — JetBrains plugin | Same as CLI (`~/.claude/skills/`) | `/delegate-to-opencode` |
-| Claude Code Desktop | Same as CLI (`~/.claude/skills/`) | `/delegate-to-opencode` |
-| claude.ai/code | Synced from CLI config | `/delegate-to-opencode` |
-| Hermes Agent | `~/.hermes/skills/` or `%LOCALAPPDATA%/hermes/skills/` | `/delegate-tasks` |
-| Kimi Code | `~/.kimi-code/skills/` or via `--skills-dir <path>` | varies by skill name |
-| Any other AI | No skill directory — use `adapters/generic-prompt.md` | paste into chat / system prompt |
-
-> **One install covers many surfaces.** All Claude Code interfaces (CLI, VS Code, Cursor, Windsurf, JetBrains, Desktop) share the same `~/.claude/skills/` directory. Install once and all surfaces see the skills immediately.
-
----
-
-## Claude Code skills
+| Tool | Native `~/.agents/skills/` support | Notes |
+|------|------------------------------------|-------|
+| OpenAI Codex CLI | ✅ Primary user-level path | Also scans ancestor `.agents/skills/` dirs |
+| OpenCode | ✅ Scanned alongside `~/.claude/skills/` | Scans both at startup |
+| pi | ✅ Scanned alongside `~/.pi/agent/skills/` | Also supports `--skill <path>` flag |
+| Gemini CLI | ✅ Takes precedence over `~/.gemini/skills/` | |
+| Kimi Code CLI | ✅ "Generic group" path | Also scans `~/.config/agents/skills/` |
+| Claude Code | ⚠️ Uses `~/.claude/skills/` primarily | May vary by version; install to both to be safe |
+| Hermes Agent | ⚠️ Requires explicit config | Add `~/.agents/skills` to `external_dirs` in `~/.hermes/config.yaml` |
+| mimo | ❓ Not confirmed | Install directly via mimo's own skills path |
+| agy | ❓ Not confirmed | Install directly via agy's own skills path |
 
 ### Required layout
 
-Each `SKILL.md` references `../docs/workflow.md`. The `docs/` folder must be installed **alongside** the skill folders, one level up:
+Each `SKILL.md` references `../shared/workflow.md`. The `shared/` folder must be installed **alongside** the skill folders, one level up:
 
 ```
-<skills-root>/
-├── docs/
-│   ├── workflow.md
-│   ├── usage.md
-│   └── install.md
-├── delegate-to-opencode/
+<skills-root>/                  ← ~/.agents/skills/ or ~/.claude/skills/
+├── shared/
+│   └── workflow.md
+├── delegate-to-any/
 │   └── SKILL.md
-├── delegate-to-pi/
+├── delegate-to-opencode/
 │   └── SKILL.md
 └── ...
 ```
 
-Global install target: `~/.claude/skills/`
-Project install target: `.claude/skills/` (at the project root)
+### Installing to `~/.agents/skills/`
 
-### Installing
-
-Copy or symlink the directories. On any platform with a POSIX shell (macOS, Linux, WSL, Git Bash on Windows):
+On macOS, Linux, WSL, or Git Bash on Windows:
 
 ```bash
 # Copy — snapshot at install time
-SKILLS=~/.claude/skills
-mkdir -p "$SKILLS"
-cp -r docs "$SKILLS/"
-for skill in delegate-to-opencode delegate-to-pi delegate-to-mimo \
-             delegate-to-hermes delegate-to-kimi delegate-to-codex delegate-to-agy; do
-  cp -r "$skill" "$SKILLS/"
+mkdir -p ~/.agents/skills
+cp -r skills/shared ~/.agents/skills/
+for skill in skills/delegate-to-*; do
+  cp -r "$skill" ~/.agents/skills/
 done
 
-# Symlink — stays in sync with the repo
-REPO="$(pwd)"   # run from the repo root
-SKILLS=~/.claude/skills
-mkdir -p "$SKILLS"
-ln -sf "$REPO/docs" "$SKILLS/docs"
-for skill in delegate-to-opencode delegate-to-pi delegate-to-mimo \
-             delegate-to-hermes delegate-to-kimi delegate-to-codex delegate-to-agy; do
-  ln -sf "$REPO/$skill" "$SKILLS/$skill"
+# Symlink — stays in sync with the repo (run from repo root)
+REPO="$(pwd)"
+mkdir -p ~/.agents/skills
+ln -sf "$REPO/skills/shared" ~/.agents/skills/shared
+for skill in skills/delegate-to-*; do
+  ln -sf "$REPO/$skill" ~/.agents/skills/$(basename "$skill")
 done
 ```
-
-On Windows without a POSIX shell, use PowerShell — copy and junction-link are equivalent to the above. The concept is the same: place `docs/` and `delegate-to-*/` under the same parent directory.
 
 ### Verifying
 
-In any Claude Code session, type `/delegate` — all installed skills appear in autocomplete. Or check the files directly:
-
 ```bash
-ls ~/.claude/skills/delegate-to-opencode/SKILL.md
-ls ~/.claude/skills/docs/workflow.md
+ls ~/.agents/skills/delegate-to-opencode/SKILL.md
+ls ~/.agents/skills/shared/workflow.md
 ```
 
-### Per-surface notes
-
-**VS Code / Cursor / Windsurf / JetBrains** — install the Claude Code extension for your editor, then the `~/.claude/skills/` global install is automatically available. No additional configuration.
-
-**MiniMax Code, other VS Code forks** — install the Claude Code extension via VSIX if it isn't in the fork's marketplace.
-
-**claude.ai/code (web)** — runs `claude` CLI under the hood. The `~/.claude/skills/` install syncs automatically; refresh the browser if skills don't appear.
+Then invoke in any supported tool:
+```
+/delegate-to-opencode add a User model to src/models/user.ts
+```
 
 ---
 
-## Hermes skills
+## Claude Code
 
-### Required layout
-
-```
-<hermes-skills-root>/
-└── delegate-tasks/
-    └── SKILL.md
-```
-
-Hermes's local skills directory (where it reads user-defined skills from):
+Claude Code reads from `~/.claude/skills/`. Install there directly, or symlink from the cross-tool location:
 
 ```bash
-hermes skills list   # shows installed skills and their sources
+# Option A: install directly
+mkdir -p ~/.claude/skills
+cp -r skills/shared ~/.claude/skills/
+for skill in skills/delegate-to-*; do
+  cp -r "$skill" ~/.claude/skills/
+done
+
+# Option B: symlink from ~/.agents/skills/ (keeps both locations in sync)
+mkdir -p ~/.claude/skills
+ln -sf ~/.agents/skills/shared ~/.claude/skills/shared
+for skill in ~/.agents/skills/delegate-to-*; do
+  ln -sf "$skill" ~/.claude/skills/$(basename "$skill")
+done
 ```
 
-Look for entries marked `local` — those come from the user skills directory. Typical paths:
+**Supported Claude Code surfaces** — all use `~/.claude/skills/`, installed once:
 
-| Platform | Path |
-|----------|------|
-| macOS / Linux | `~/.hermes/skills/` |
-| Windows | `%LOCALAPPDATA%\hermes\skills\` |
+| Surface | Notes |
+|---------|-------|
+| Claude Code CLI | Global `~/.claude/skills/` or project `.claude/skills/` |
+| VS Code extension | Same as CLI |
+| Cursor extension | Same as CLI |
+| Windsurf extension | Same as CLI |
+| JetBrains plugin | Same as CLI |
+| Claude Code Desktop | Same as CLI |
+| claude.ai/code | Syncs from CLI config; refresh browser if skills don't appear |
 
-### Installing
+**VS Code forks (MiniMax Code, etc.)** — install the Claude Code extension via VSIX if it isn't in the fork's marketplace.
+
+### Verifying
+
+In any Claude Code session, type `/delegate` — all installed skills appear in autocomplete. Or check:
+
+```bash
+ls ~/.claude/skills/delegate-to-opencode/SKILL.md
+ls ~/.claude/skills/shared/workflow.md
+```
+
+---
+
+## OpenAI Codex CLI
+
+Codex uses `~/.agents/skills/` as its primary user-level path. Once installed there (see above), skills load automatically. Codex also scans `.agents/skills/` in every ancestor directory up to the repo root for project-level skills.
+
+No additional configuration needed.
+
+---
+
+## pi
+
+pi scans `~/.agents/skills/` automatically alongside `~/.pi/agent/skills/`. Once the cross-tool install is done, skills are available immediately. You can also pass `--skill <path>` at invocation or declare skills in `package.json` under `pi.skills`.
+
+---
+
+## Gemini CLI
+
+Gemini CLI scans `~/.agents/skills/` at the user scope (takes precedence over `~/.gemini/skills/`). Cross-tool install is all that's needed.
+
+---
+
+## Kimi Code CLI
+
+Kimi scans `~/.agents/skills/` and `~/.config/agents/skills/` in its "generic group" alongside Kimi-specific paths. Cross-tool install works. Skills are also picked up from a project-local `.agents/skills/` directory.
+
+---
+
+## Hermes Agent
+
+Hermes does not scan `~/.agents/skills/` by default. Add it to `~/.hermes/config.yaml`:
+
+```yaml
+skills:
+  external_dirs:
+    - ~/.agents/skills
+```
+
+Then restart Hermes. Verify with `hermes skills list`.
+
+Alternatively, use the Hermes-native adapter which uses Hermes's own `terminal()` API format:
 
 ```bash
 HERMES_SKILLS=~/.hermes/skills   # adjust to your platform path
 mkdir -p "$HERMES_SKILLS/autonomous-ai-agents"
-cp -r hermes-skills/delegate-tasks "$HERMES_SKILLS/autonomous-ai-agents/"
+cp -r helpers/hermes/delegate-tasks "$HERMES_SKILLS/autonomous-ai-agents/"
 ```
 
 Verify:
@@ -140,28 +174,15 @@ Verify:
 hermes skills list   # delegate-tasks should appear as local/enabled
 ```
 
-### Invoking
-
-In a Hermes chat session:
+Invoke:
 ```
 /delegate-tasks delegate to opencode: add a User model to src/models/user.ts
 ```
 
-Hermes reads the skill and runs the delegation workflow using its `terminal()` and `process()` tool API.
-
----
-
-## Kimi Code skills
-
-Kimi's `--skills-dir` flag loads skills from a specified directory. Pass it at invocation time or set a default in `~/.kimi-code/config.toml`.
-
-```bash
-kimi --skills-dir /path/to/delegate-skills/kimi-skills
-```
-
-To auto-load without the flag, check whether Kimi auto-discovers a `skills/` subdirectory in `~/.kimi-code/` or a project-local `.kimi-code/skills/` directory, and place the skill files there.
-
-> Kimi's native skill format is not yet documented publicly. The Claude Code SKILL.md format may be partially compatible — test by running `kimi --skills-dir delegate-to-opencode` and observing whether `/delegate-to-opencode` appears as a command. The hermes-format skills (`hermes-skills/`) are an alternative since they use the same SKILL.md format but with different metadata.
+| Platform | Hermes skills path |
+|----------|-------------------|
+| macOS / Linux | `~/.hermes/skills/` |
+| Windows | `%LOCALAPPDATA%\hermes\skills\` |
 
 ---
 
@@ -169,51 +190,50 @@ To auto-load without the flag, check whether Kimi auto-discovers a `skills/` sub
 
 For tools without a skill system (GitHub Copilot, Zed AI, Continue.dev, any chat AI):
 
-**Option 1 — Paste the generic prompt:** Copy `adapters/generic-prompt.md` into the tool's system prompt, workspace instructions, or a custom slash command definition. The AI then follows the protocol using its own bash/terminal tool.
+**Option 1 — Paste the generic prompt:** Copy `helpers/adapters/generic-prompt.md` into the tool's system prompt, workspace instructions, or a custom slash command definition.
 
-**Option 2 — Call the script directly:** Any AI with shell access can run:
+**Option 2 — Call the script directly:**
 ```bash
-bash /path/to/delegate-skills/scripts/delegate.sh <runtime> TASK-N [timeout-seconds]
+bash /path/to/delegate-skills/helpers/scripts/delegate.sh <runtime> TASK-N [timeout-seconds]
 ```
 after writing the handoff document to `.opencode/tasks/TASK-N.md`.
 
-**Option 3 — Use Claude Code CLI alongside:** Open a terminal in your editor, run `claude`, and invoke `/delegate-to-<runtime>`. The delegation runs in the background; you return to your editor. Works in Zed, Vim, Emacs, or any editor with a terminal pane.
+**Option 3 — Use Claude Code CLI alongside:** Open a terminal in your editor, run `claude`, and invoke `/delegate-to-<runtime>`. Works in Zed, Vim, Emacs, or any editor with a terminal pane.
 
-See `adapters/generic-prompt.md` for Continue.dev slash command config and a one-shot slash command template.
+See `helpers/adapters/generic-prompt.md` for Continue.dev slash command config and a one-shot slash command template.
 
 ---
 
-## Installing the core script
+## Installing the launcher script
 
-`scripts/delegate.sh` is a standalone bash script. Install it in any project that needs tool-agnostic delegation:
+`helpers/scripts/delegate.sh` is a standalone bash script. Copy it into any project:
 
 ```bash
-mkdir -p .claude/scripts
-cp /path/to/delegate-skills/scripts/delegate.sh .claude/scripts/delegate.sh
-chmod +x .claude/scripts/delegate.sh
+mkdir -p scripts
+cp /path/to/delegate-skills/helpers/scripts/delegate.sh scripts/delegate.sh
+chmod +x scripts/delegate.sh
 ```
 
-Or symlink it so it stays in sync:
+Or symlink:
 ```bash
-ln -sf /path/to/delegate-skills/scripts/delegate.sh scripts/delegate.sh
+ln -sf /path/to/delegate-skills/helpers/scripts/delegate.sh scripts/delegate.sh
 ```
-
-Any AI (hermes, kimi, copilot, cursor, etc.) can then call it via their terminal/bash tool.
 
 ---
 
 ## Uninstalling
 
-Remove the directories you installed. For Claude Code:
 ```bash
-rm -rf ~/.claude/skills/delegate-to-opencode   # remove one skill
-rm -rf ~/.claude/skills/docs                   # remove shared docs (after all skills are removed)
-```
+# From ~/.agents/skills/
+rm -rf ~/.agents/skills/shared
+rm -rf ~/.agents/skills/delegate-to-any
+rm -rf ~/.agents/skills/delegate-to-opencode   # repeat for each skill
 
-For Hermes:
-```bash
-hermes skills uninstall delegate-tasks   # if installed via hermes registry
-# or remove manually:
+# From ~/.claude/skills/
+rm -rf ~/.claude/skills/shared
+rm -rf ~/.claude/skills/delegate-to-opencode   # repeat for each skill
+
+# Hermes native adapter
 rm -rf ~/.hermes/skills/autonomous-ai-agents/delegate-tasks
 ```
 
@@ -221,22 +241,20 @@ rm -rf ~/.hermes/skills/autonomous-ai-agents/delegate-tasks
 
 ## Troubleshooting
 
-**Claude Code: skill not in autocomplete**
-Confirm the file exists: `ls ~/.claude/skills/delegate-to-opencode/SKILL.md`
-Restart the Claude Code session — skills load at startup.
-Check that the first line of SKILL.md is exactly `---`.
+**Skill not in autocomplete**
+Confirm the file exists (`ls ~/.agents/skills/delegate-to-opencode/SKILL.md`) and restart the AI session — skills load at startup.
 
 **`missing_runtime` error**
-The agent CLI (opencode, pi, etc.) isn't on PATH. Install it (see `usage.md`) and restart your terminal.
+The agent CLI isn't on PATH. Install it (see `docs/usage.md`) and restart your terminal.
 
-**Skill can't find `../docs/workflow.md`**
-The `docs/` folder wasn't installed alongside the skill folders. Re-install and include `docs/`.
+**Skill can't find `../shared/workflow.md`**
+The `shared/` folder wasn't installed alongside the skill folders. Re-run the install commands and include `skills/shared/`.
 
 **Worktree creation fails**
 Requires a git repo with at least one commit: `git init && git commit --allow-empty -m "init"`
 
-**`scripts/delegate.sh` exits with "Runtime not found"**
-The chosen agent CLI is not on PATH. Install it or verify with `command -v <runtime>`.
-
 **Hermes skill not appearing**
-Run `hermes skills list` to confirm the file was found. The skill directory path must match what hermes reads — check with `hermes skills list --verbose` if available.
+Run `hermes skills list`. Check that `external_dirs` in `~/.hermes/config.yaml` points to the correct path and that Hermes was restarted after the config change.
+
+**`helpers/scripts/delegate.sh` exits with "Runtime not found"**
+The chosen agent CLI is not on PATH. Verify with `command -v <runtime>`.

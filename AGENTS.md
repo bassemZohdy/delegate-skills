@@ -2,10 +2,13 @@
 
 ## What this repo is
 
-A collection of Claude Code **skills** that delegate coding tasks to background agent CLIs with git worktree isolation. Seven skills targeting seven runtimes:
+A collection of generic **skills** conforming to the [agentskills.io open standard](https://agentskills.io/specification) that delegate coding tasks to background agent CLIs with git worktree isolation. Eight installable skills (one auto-router, seven runtime-specific) plus helpers and adapters for tools without a native skill system.
+
+Skills install to `~/.agents/skills/` (cross-tool interop path — OpenCode, Codex, pi, Gemini CLI, Kimi, and 40+ others) and/or `~/.claude/skills/` (Claude Code native path). The spec defines six official frontmatter fields: `name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`. Claude Code adds `disable-model-invocation` and `argument-hint` as extensions; all other compliant tools silently ignore them.
 
 | Skill | Runtime | Install |
 |-------|---------|---------|
+| `delegate-to-any` | auto-selects best available | — |
 | `delegate-to-opencode` | `opencode` | `npm install -g opencode-ai` |
 | `delegate-to-pi` | `pi` | `bun install -g @earendil-works/pi-coding-agent` |
 | `delegate-to-mimo` | `mimo` | `npm install -g @mimo-ai/cli` |
@@ -18,44 +21,49 @@ Not a traditional application — no build system, no CI.
 
 ## Directory layout
 
-### Claude Code skills (for claude CLI, VS Code, Cursor, Windsurf, JetBrains, Desktop)
+### `skills/` — installable skills
 
-Each skill contains only its SKILL.md (runtime-specific Step 4 logic):
+Generic SKILL.md files conforming to the agentskills.io spec. Install by copying to `~/.agents/skills/` (cross-tool standard) and/or `~/.claude/skills/` (Claude Code native). See `docs/install.md` for per-tool install instructions.
 
 ```
-delegate-to-<runtime>/
-└── SKILL.md        # Step 4 only — detect, validate, launch, retry
+skills/
+├── shared/
+│   └── workflow.md          # Steps 0–3 and 5, shared by all skills via ../shared/workflow.md
+├── delegate-to-any/
+│   └── SKILL.md             # Step 4: scan all runtimes, select best, delegate
+└── delegate-to-<runtime>/
+    └── SKILL.md             # Step 4: detect, validate, launch, retry for one runtime
 ```
 
-Shared resources (loaded by all Claude Code skills via `../docs/workflow.md`):
+### `docs/` — documentation only
 
 ```
 docs/
-├── workflow.md     # Steps 0–3 and 5 (shared across all Claude Code skills)
-├── usage.md        # human-facing usage guide
-└── install.md      # install guide for all tools and formats
+├── usage.md                 # human-facing usage guide
+└── install.md               # install guide for all tools and formats
+```
+
+### `helpers/` — setup and configure helpers
+
+Not installed as skills. Support files for configuring delegation in a project.
+
+```
+helpers/
+├── scripts/
+│   └── delegate.sh          # portable bash launcher — accepts <runtime> <task-id> [timeout]
+├── adapters/
+│   └── generic-prompt.md    # universal prompt template for any AI with bash/terminal access
+└── hermes/
+    └── delegate-tasks/
+        └── SKILL.md         # hermes-native skill using terminal()/process() API
+```
+
+### `tests/` — test suite
+
+```
 tests/
-├── run-tests.sh    # test runner
+├── run-tests.sh
 └── test-structure.sh
-```
-
-### Hermes-native skills (for Hermes Agent)
-
-One comprehensive skill covering all 7 runtimes:
-
-```
-hermes-skills/
-└── delegate-tasks/
-    └── SKILL.md    # uses hermes terminal()/process() API patterns
-```
-
-### Tool-agnostic adapters (for any other AI)
-
-```
-scripts/
-└── delegate.sh     # portable bash launcher — accepts <runtime> <task-id> [timeout]
-adapters/
-└── generic-prompt.md  # universal prompt template for any AI with bash/terminal access
 ```
 
 Other top-level files:
@@ -71,6 +79,7 @@ Other top-level files:
 - **Never expand the handoff markdown into a shell variable** — special characters break cross-platform argument parsing. Use `--file` (opencode), `@path` (pi), stdin via `-` (codex), or absolute path reference in the prompt (hermes, kimi, agy).
 - The `active_form` field in TODO.md is critical — it tells reviewing agents what mid-task progress looks like.
 - For tools with no `--dir` flag (pi, hermes, kimi), capture `PROJECT_ROOT="$(pwd)"` **before** `cd`ing into the worktree so all `.opencode/tasks/*` paths stay correct.
+- All skills reference the shared workflow via `../shared/workflow.md` (one level up from the skill directory, inside `skills/`).
 
 ## CLI differences that matter
 
@@ -87,7 +96,7 @@ Other top-level files:
 ## Running tests
 
 ```bash
-bash tests/run-tests.sh   # 139 checks, no external dependencies
+bash tests/run-tests.sh   # no external dependencies
 ```
 
 ## Known gotchas

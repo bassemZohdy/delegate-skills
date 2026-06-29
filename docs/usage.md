@@ -17,6 +17,7 @@ Verify: `opencode --version`, `pi --version`, `mimo --version`, `codex --version
 ## Invoking a skill
 
 ```
+/delegate-to-any <task description>       # auto-selects whichever runtime is installed
 /delegate-to-opencode <task description>
 /delegate-to-pi <task description>
 /delegate-to-mimo <task description>
@@ -25,6 +26,8 @@ Verify: `opencode --version`, `pi --version`, `mimo --version`, `codex --version
 /delegate-to-codex <task description>
 /delegate-to-agy <task description>
 ```
+
+Use `/delegate-to-any` when you don't care which agent runs or want portability across machines. The skill scans for installed runtimes and picks the highest-priority one (oh-my-opencode → opencode → pi → mimo → hermes → kimi → codex → agy).
 
 The task description is plain English. Be specific about what to build, which files are involved, and any conventions or constraints.
 

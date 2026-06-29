@@ -2,6 +2,25 @@
 
 Shared workflow for all `delegate-to-*` skills. Each skill's `SKILL.md` references this document and adds its own Step 4 (runtime-specific launch logic).
 
+The user's task description is available as `$ARGUMENTS` — it is substituted into the skill body's `## Task` section before the workflow runs. Reference it throughout this workflow wherever the task description is needed (handoff document, TODO.md title, worktree naming).
+
+---
+
+## Step −1: Runtime Preflight
+
+**Run this before touching git or writing any files.**
+
+Each skill's `SKILL.md` defines a **Detect** block in Step 4. Run it now:
+
+```bash
+# (copy the Detect block from Step 4 of the active skill's SKILL.md and run it here)
+```
+
+- Result is a named runtime (e.g. `opencode`, `omo`, `pi`) → proceed to Step 0.
+- Result is `none` → output the `missing_runtime` JSON defined in Step 4 of the skill and **stop immediately**. Do not run git preflight, create worktrees, write TODO.md, or write any files.
+
+This guardrail prevents wasted work: a missing binary is caught in one shell command rather than after Steps 0–3 have already modified the repository.
+
 ---
 
 ## Step 0: Git Preflight
