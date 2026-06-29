@@ -1,0 +1,8 @@
+# Normalize line endings to LF in the repository; checkout as-is on all platforms
+* text=auto eol=lf
+
+# Shell scripts must always be LF (CRLF breaks shebangs on POSIX systems)
+*.sh text eol=lf
+
+# Markdown and text files
+*.md text eol=lf

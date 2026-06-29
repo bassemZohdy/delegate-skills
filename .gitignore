@@ -1,0 +1,22 @@
+# Runtime artifacts from delegated tasks
+.opencode/tasks/
+.opencode/worktrees/
+.opencode/node_modules/
+.opencode/package.json
+.opencode/package-lock.json
+.opencode/bun.lock
+
+# Local Claude Code project settings (not part of the skill definitions)
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
