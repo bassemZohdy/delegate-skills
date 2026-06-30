@@ -1,7 +1,7 @@
 ---
 name: delegate-tasks
 description: "Delegate long-running coding tasks to a background agent CLI (opencode, pi, mimo, hermes, kimi, codex, agy) with git worktree isolation, structured handoff documents, and progress monitoring."
-version: 1.0.0
+version: 1.1.0
 author: delegate-skills
 license: MIT
 platforms: [linux, macos, windows]
@@ -132,8 +132,10 @@ terminal(command="PROJECT_ROOT=$(pwd) && cd .opencode/worktrees/TASK-<N> && nohu
 
 **codex:**
 ```
-terminal(command="export _F=$(pwd)/.opencode/tasks/TASK-<N>.md _D=$(pwd)/.opencode/worktrees/TASK-<N> && nohup bash -c 'codex exec -C \"$_D\" -s danger-full-access --dangerously-bypass-approvals-and-sandbox - < \"$_F\"' > $(pwd)/.opencode/tasks/TASK-<N>.log 2>&1 & echo $!", workdir="<project>")
+terminal(command="export _F=$(pwd)/.opencode/tasks/TASK-<N>.md _D=$(pwd)/.opencode/worktrees/TASK-<N> && nohup bash -c '{ printf \"%s\\n\\n\" \"Execute the task described in the handoff document below. Follow all instructions in it exactly.\"; cat \"$_F\"; } | codex exec -C \"$_D\" -s danger-full-access --dangerously-bypass-approvals-and-sandbox -' > $(pwd)/.opencode/tasks/TASK-<N>.log 2>&1 & echo $!", workdir="<project>")
 ```
+
+The `printf` framing is mandatory — piping the raw handoff risks Codex treating it as content to discuss rather than a task to execute.
 
 **mimo:**
 ```

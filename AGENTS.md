@@ -85,7 +85,7 @@ Other top-level files:
 
 | Feature | opencode | pi | mimo | hermes | kimi | codex | agy |
 |---------|----------|----|------|--------|------|-------|-----|
-| Run command | `opencode run "msg"` | `pi -p "msg"` | `mimo run "msg"` | `hermes chat -q "msg"` | `kimi -p "msg"` | `codex exec - < file` | `agy --print "msg"` |
+| Run command | `opencode run "msg"` | `pi -p "msg"` | `mimo run "msg"` | `hermes chat -q "msg"` | `kimi -p "msg"` | `printf framing \| codex exec -` | `agy --print "msg"` |
 | Handoff delivery | `--file path` | `@path` positional | `--file path` (check) | absolute path in prompt | absolute path in prompt | stdin (`-`) | absolute path in prompt |
 | Working dir | `--dir path` | `cd` before (use PROJECT_ROOT) | `--dir path` (check) | `cd` before (use PROJECT_ROOT) | `cd` before (use PROJECT_ROOT) | `-C/--cd path` | `--add-dir path` |
 | Skip perms | `--dangerously-skip-permissions` | `--approve` | `--dangerously-skip-permissions` (check) | `--yolo --accept-hooks` | `-y/--yolo` | `--dangerously-bypass-approvals-and-sandbox` | `--dangerously-skip-permissions` |

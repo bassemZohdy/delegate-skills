@@ -215,6 +215,7 @@ delegate-skills/
 - [`docs/usage.md`](docs/usage.md) — invoking skills, model overrides, timeout tiers, merge workflow
 - [`skills/shared/workflow.md`](skills/shared/workflow.md) — the shared workflow (Steps 0–5) all skills follow
 - [`AGENTS.md`](AGENTS.md) — CLI differences table, known gotchas, conventions for agents editing this repo
+- [`CHANGELOG.md`](CHANGELOG.md) — release history and notable changes
 
 ---
 
@@ -224,7 +225,7 @@ delegate-skills/
 bash tests/run-tests.sh
 ```
 
-Validates structure, frontmatter, workflow references, helper files, and runtime coverage. No external dependencies.
+Validates structure, frontmatter, workflow references, helper files, runtime coverage, **and** semantic regression checks that assert behavioral correctness (worktree isolation, real agent PID capture, watchdog teardown, Codex handoff framing). No external dependencies.
 
 ---
 

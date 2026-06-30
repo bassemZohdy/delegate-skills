@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and kimi on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.0.0
+  version: 1.1.0
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"

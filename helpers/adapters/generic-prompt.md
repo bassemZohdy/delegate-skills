@@ -107,9 +107,11 @@ echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
 ```
 export _CODEX_TASK_FILE="$(pwd)/.opencode/tasks/TASK-N.md"
 export _CODEX_WORK_DIR="$(pwd)/.opencode/worktrees/TASK-N"
-nohup bash -c 'codex exec -C "$_CODEX_WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox - < "$_CODEX_TASK_FILE"' > .opencode/tasks/TASK-N.log 2>&1 &
+nohup bash -c '{ printf "%s\n\n" "Execute the task described in the handoff document below. Follow all instructions in it exactly."; cat "$_CODEX_TASK_FILE"; } | codex exec -C "$_CODEX_WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox -' > .opencode/tasks/TASK-N.log 2>&1 &
 echo $! > .opencode/tasks/TASK-N.pid
 ```
+
+> The `printf` framing is mandatory — piping the raw handoff risks Codex treating it as content to discuss rather than a task to execute.
 
 **hermes:**
 ```
