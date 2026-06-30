@@ -192,7 +192,7 @@ If `RETRIES < 2`:
 4. Re-launch with the same command structure (Step 4), replacing the watchdog.
 5. Update TODO.md: `retries: <new count>`, add a note under the block explaining what changed.
 
-If `RETRIES >= 2`: mark `status: failed`, report the log contents to the user, stop.
+If `RETRIES >= 2`: mark `status: failed`, cancel the watchdog (see Case 4 for the command), report the log contents to the user, stop.
 
 ---
 
@@ -204,7 +204,7 @@ If `PREV_SIZE != -1` (not the first poll) and `LOG_SIZE == PREV_SIZE` and proces
 
 1. Kill the process: `kill -TERM $PID && sleep 5 && kill -KILL $PID 2>/dev/null`
 2. Check `RETRIES`. If `< 2`: retry launch with `--continue` flag to resume the session (see the skill's `SKILL.md` for the exact retry command).
-3. If `RETRIES >= 2`: mark `status: failed`, report to user with log tail.
+3. If `RETRIES >= 2`: mark `status: failed`, cancel the watchdog (see Case 4), report to user with log tail.
 
 ---
 
@@ -214,7 +214,7 @@ The process ran to completion but the expected `output_ref` file(s) don't exist.
 
 1. Check the log tail for error messages.
 2. If `RETRIES < 2`: retry with `--continue` (same as Case 2 retry).
-3. If `RETRIES >= 2`: mark `status: failed`, show user the log and suggest manual intervention.
+3. If `RETRIES >= 2`: mark `status: failed`, cancel the watchdog (see Case 4), show user the log and suggest manual intervention.
 
 ---
 
@@ -233,12 +233,17 @@ Run the verification commands from the handoff document:
 ```
 Check off sub-tasks: `- [x] <sub-task>`
 Clear the `owner` field.
+**Cancel the watchdog** — it is still sleeping and would otherwise fire at the timeout, targeting a PID that may by then belong to an unrelated process (PID reuse):
+```bash
+WATCHDOG=$(cat ".opencode/tasks/TASK-N.watchdog.pid" 2>/dev/null)
+kill "$WATCHDOG" 2>/dev/null
+```
 Report to user: what was built, where it lives, any caveats.
 
 **If verification fails:**
 - Log what specifically failed.
 - If `RETRIES < 2`: retry with `--continue` and a note in the prompt about what was wrong.
-- If `RETRIES >= 2`: mark `status: failed`, report exact verification failures.
+- If `RETRIES >= 2`: mark `status: failed`, **cancel the watchdog** (same command as above), report exact verification failures.
 
 ---
 

@@ -88,14 +88,33 @@ WORK_DIR=".opencode/worktrees/TASK-N"
 
 TIMEOUT_SECS=<seconds from timeout tier>
 
+# Help-check both flags — omo may support --file and/or --dir (varies by version).
+# If --dir is unsupported, fall back to cd so the agent still runs in the worktree.
+OMO_HELP=$(oh-my-opencode run --help 2>&1)
 OMO_FILE_FLAG=""
-oh-my-opencode run --help 2>&1 | grep -q "\-\-file" && OMO_FILE_FLAG="--file .opencode/tasks/TASK-N.md"
+echo "$OMO_HELP" | grep -q "\-\-file" && OMO_FILE_FLAG="--file .opencode/tasks/TASK-N.md"
+OMO_DIR_FLAG=""
+echo "$OMO_HELP" | grep -q "\-\-dir" && OMO_DIR_FLAG="--dir $WORK_DIR"
 
-nohup oh-my-opencode run \
-  "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
-  $OMO_FILE_FLAG \
-  --yes \
-  > ".opencode/tasks/TASK-N.log" 2>&1 &
+if [ -n "$OMO_DIR_FLAG" ]; then
+  # --dir supported: pass it directly (no cd needed)
+  # shellcheck disable=SC2086
+  nohup oh-my-opencode run \
+    "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
+    $OMO_FILE_FLAG \
+    $OMO_DIR_FLAG \
+    --yes \
+    > ".opencode/tasks/TASK-N.log" 2>&1 &
+else
+  # No --dir flag: cd into the worktree so isolation still holds.
+  # Capture PROJECT_ROOT first so log/pid paths resolve from project root.
+  PROJECT_ROOT="$(pwd)"
+  cd "$WORK_DIR" && nohup oh-my-opencode run \
+    "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
+    $OMO_FILE_FLAG \
+    --yes \
+    > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+fi
 
 TASK_PID=$!
 echo $TASK_PID > ".opencode/tasks/TASK-N.pid"

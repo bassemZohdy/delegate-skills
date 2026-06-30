@@ -77,7 +77,7 @@ mkdir -p "$TASKS_DIR"
 
 # ── Worktree ───────────────────────────────────────────────────────────────────
 
-if git rev-parse --git-dir &>/dev/null && git rev-parse HEAD &>/dev/null 2>/dev/null; then
+if git rev-parse --git-dir &>/dev/null && git rev-parse HEAD &>/dev/null; then
   BRANCH="${RUNTIME}/${TASK_ID}"
   if [ ! -d "$WORK_DIR" ]; then
     git worktree add "$WORK_DIR" -b "$BRANCH" 2>/dev/null || \
@@ -103,10 +103,13 @@ case "$RUNTIME" in
     ;;
 
   pi)
-    (cd "$WORK_DIR" && \
-     nohup pi -p "@$TASK_FILE" "Execute the task in the handoff document." \
-       --approve \
-       > "$LOG_FILE" 2>&1) &
+    # cd into the worktree directly (one runtime per invocation, so changing
+    # the script cwd is safe). This makes $! the real nohup agent PID, not a
+    # subshell PID — critical for liveness checks and the watchdog.
+    cd "$WORK_DIR"
+    nohup pi -p "@$TASK_FILE" "Execute the task in the handoff document." \
+      --approve \
+      > "$LOG_FILE" 2>&1 &
     TASK_PID=$!
     ;;
 
@@ -122,29 +125,33 @@ case "$RUNTIME" in
       nohup mimo run "Execute the handoff task." $MIMO_FILE $MIMO_DIR $MIMO_SKIP \
         > "$LOG_FILE" 2>&1 &
     else
+      # No --file flag: cd into the worktree so isolation holds. Same reason
+      # as pi — $! must be the agent, not a subshell.
+      cd "$WORK_DIR"
       # shellcheck disable=SC2086
-      (cd "$WORK_DIR" && \
-       nohup mimo run "Read $TASK_FILE and execute the task." $MIMO_DIR $MIMO_SKIP \
-         > "$LOG_FILE" 2>&1) &
+      nohup mimo run "Read $TASK_FILE and execute the task." $MIMO_DIR $MIMO_SKIP \
+        > "$LOG_FILE" 2>&1 &
     fi
     TASK_PID=$!
     ;;
 
   hermes)
-    (cd "$WORK_DIR" && \
-     nohup hermes chat \
-       -q "Read $TASK_FILE and execute the task described in it. All changes must stay in $WORK_DIR." \
-       --yolo --accept-hooks -Q \
-       > "$LOG_FILE" 2>&1) &
+    # cd into the worktree directly — see pi note above re: $! semantics.
+    cd "$WORK_DIR"
+    nohup hermes chat \
+      -q "Read $TASK_FILE and execute the task described in it. All changes must stay in $WORK_DIR." \
+      --yolo --accept-hooks -Q \
+      > "$LOG_FILE" 2>&1 &
     TASK_PID=$!
     ;;
 
   kimi)
-    (cd "$WORK_DIR" && \
-     nohup kimi \
-       -p "Read $TASK_FILE and execute the task described in it. All changes must stay in $WORK_DIR." \
-       -y \
-       > "$LOG_FILE" 2>&1) &
+    # cd into the worktree directly — see pi note above re: $! semantics.
+    cd "$WORK_DIR"
+    nohup kimi \
+      -p "Read $TASK_FILE and execute the task described in it. All changes must stay in $WORK_DIR." \
+      -y \
+      > "$LOG_FILE" 2>&1 &
     TASK_PID=$!
     ;;
 
@@ -180,6 +187,10 @@ esac
 # ── PID files ─────────────────────────────────────────────────────────────────
 
 echo "$TASK_PID" > "$PID_FILE"
+# Initialise retry counter for parity with the SKILL.md inline launch blocks;
+# Step 5 Case 1 reads this file (falls back to 0 if absent, but write it so the
+# contract is consistent across both launch paths).
+echo 0 > "$TASKS_DIR/$TASK_ID.retries"
 
 # Watchdog: SIGTERM after timeout, SIGKILL after 30 s grace
 (sleep "$TIMEOUT_SECS" && \

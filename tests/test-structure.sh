@@ -594,6 +594,77 @@ for script in tests/run-tests.sh tests/test-structure.sh helpers/scripts/delegat
   fi
 done
 
+# ─── Semantic regression tests ────────────────────────────────────────────────
+# These assert behavioral correctness of previously-found bugs, not just string
+# presence. The structure tests above are grep-only and would pass even with the
+# bugs present; this block prevents silent regressions.
+
+echo ""
+echo "  ─── semantic regression checks ───"
+
+# Regression: omo (oh-my-opencode) launch block must set the working directory.
+# Bug #1 — omo ran in the project root, ignoring the worktree, because neither
+# --dir nor a cd fallback was present. Both the opencode path and omo path must
+# isolate into WORK_DIR.
+for skill in delegate-to-opencode delegate-to-any; do
+  F="$PROJECT_ROOT/skills/$skill/SKILL.md"
+
+  # Extract the omo launch block (from "oh-my-opencode run" to the next blank
+  # fenced block boundary) and assert it touches WORK_DIR via --dir or cd.
+  if awk '/oh-my-opencode run/{flag=1} flag{print} /--yes \\/{if(flag)exit}' "$F" \
+       | grep -qE -- '--dir|\bcd "\$WORK_DIR"'; then
+    pass "skills/$skill/SKILL.md omo block sets working dir (--dir or cd)"
+  else
+    fail "skills/$skill/SKILL.md omo block does NOT set working dir (regression of bug #1)"
+  fi
+done
+
+# Regression: cd-based runtimes in delegate.sh must capture the real nohup PID,
+# not a subshell PID. Bug #3 — `( cd ... && nohup ... & )` made $! the subshell.
+# Assert none of the cd-based runtimes wrap the backgrounded nohup in `( ... ) &`.
+DELEGATE_SH="$PROJECT_ROOT/helpers/scripts/delegate.sh"
+for rt in pi hermes kimi; do
+  # Find the case body for this runtime and check no `& )` subshell-background
+  # pattern wraps nohup. We look for the runtime's case up to the next `;;`.
+  if awk -v rt="$rt" '
+        $0 ~ "^  "rt")" {incase=1}
+        incase {print}
+        /;;/ && incase {incase=0; exit}
+      ' "$DELEGATE_SH" | grep -qE '\)&[[:space:]]*$|&\s*\)'; then
+    fail "helpers/scripts/delegate.sh '$rt' case backgrounds a subshell (regression of bug #3)"
+  else
+    pass "helpers/scripts/delegate.sh '$rt' case captures real agent PID (no subshell)"
+  fi
+done
+
+# Regression: delegate.sh must initialise the .retries file for parity with the
+# SKILL.md inline launch blocks (Step 5 Case 1 reads it).
+grep -q 'retries' "$DELEGATE_SH" \
+  && pass "helpers/scripts/delegate.sh initialises .retries file" \
+  || fail "helpers/scripts/delegate.sh missing .retries initialisation (bug #3)"
+
+# Regression: shared workflow must cancel the watchdog on normal completion.
+# Bug #12 — watchdog kept sleeping after completion, risking PID reuse.
+grep -qi 'cancel the watchdog' "$WORKFLOW" \
+  && pass "shared/workflow.md cancels watchdog on completion (bug #12 fix)" \
+  || fail "shared/workflow.md missing watchdog cancellation on completion (regression of bug #12)"
+
+# Sanity: every skill that defines WORK_DIR must actually use it. Catches the
+# class of bug #1 generally (defined-but-unused). A runtime may use it
+# indirectly via an intermediate variable (mimo: MIMO_DIR_FLAG="--dir $WORK_DIR",
+# codex: _CODEX_WORK_DIR="$WORK_DIR"), so we count occurrences — if WORK_DIR
+# appears only once (the assignment), it is never consumed.
+for skill in "${SKILLS[@]}"; do
+  F="$PROJECT_ROOT/skills/$skill/SKILL.md"
+  [ -f "$F" ] || continue
+  count=$(grep -c 'WORK_DIR' "$F")
+  if [ "$count" -le 1 ]; then
+    fail "skills/$skill/SKILL.md defines WORK_DIR but never uses it (count=$count)"
+  else
+    pass "skills/$skill/SKILL.md uses WORK_DIR (count=$count refs)"
+  fi
+done
+
 # ─── Standalone summary ───────────────────────────────────────────────────────
 
 if [ "${_standalone:-false}" = "true" ]; then
