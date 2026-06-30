@@ -604,20 +604,16 @@ echo "  ─── semantic regression checks ───"
 
 # Regression: omo (oh-my-opencode) launch block must set the working directory.
 # Bug #1 — omo ran in the project root, ignoring the worktree, because neither
-# --dir nor a cd fallback was present. Both the opencode path and omo path must
-# isolate into WORK_DIR.
-for skill in delegate-to-opencode delegate-to-any; do
-  F="$PROJECT_ROOT/skills/$skill/SKILL.md"
-
-  # Extract the omo launch block (from "oh-my-opencode run" to the next blank
-  # fenced block boundary) and assert it touches WORK_DIR via --dir or cd.
-  if awk '/oh-my-opencode run/{flag=1} flag{print} /--yes \\/{if(flag)exit}' "$F" \
-       | grep -qE -- '--dir|\bcd "\$WORK_DIR"'; then
-    pass "skills/$skill/SKILL.md omo block sets working dir (--dir or cd)"
-  else
-    fail "skills/$skill/SKILL.md omo block does NOT set working dir (regression of bug #1)"
-  fi
-done
+# --dir nor a cd fallback was present. The canonical omo launch lives in
+# delegate-to-opencode (delegate-to-any references it rather than duplicating),
+# so we assert against the canonical location.
+F="$PROJECT_ROOT/skills/delegate-to-opencode/SKILL.md"
+if awk '/oh-my-opencode run/{flag=1} flag{print} /--yes \\/{if(flag)exit}' "$F" \
+     | grep -qE -- '--dir|\bcd "\$WORK_DIR"'; then
+  pass "skills/delegate-to-opencode/SKILL.md omo block sets working dir (--dir or cd)"
+else
+  fail "skills/delegate-to-opencode/SKILL.md omo block does NOT set working dir (regression of bug #1)"
+fi
 
 # Regression: cd-based runtimes in delegate.sh must capture the real nohup PID,
 # not a subshell PID. Bug #3 — `( cd ... && nohup ... & )` made $! the subshell.
@@ -648,6 +644,42 @@ grep -q 'retries' "$DELEGATE_SH" \
 grep -qi 'cancel the watchdog' "$WORKFLOW" \
   && pass "shared/workflow.md cancels watchdog on completion (bug #12 fix)" \
   || fail "shared/workflow.md missing watchdog cancellation on completion (regression of bug #12)"
+
+# Regression: Codex initial launch must frame the handoff (not pipe it raw).
+# Bug #9 — raw handoff with no framing risked Codex treating it as content to
+# discuss rather than a task to execute.
+F="$PROJECT_ROOT/skills/delegate-to-codex/SKILL.md"
+if awk '/^### Launch/,/^### Retry/' "$F" | grep -q 'Execute the task described in the handoff document below'; then
+  pass "skills/delegate-to-codex/SKILL.md initial launch frames the handoff (bug #9 fix)"
+else
+  fail "skills/delegate-to-codex/SKILL.md initial launch missing handoff framing (regression of bug #9)"
+fi
+
+# Regression: Codex retry must pipe a continuation prompt via stdin.
+# Bug #2 — 'codex exec resume --last' with no instruction idles or exits.
+if awk '/^### Retry/,EOF' "$F" | grep -qE 'printf.*Continue the task|resume --last.*-'; then
+  pass "skills/delegate-to-codex/SKILL.md retry sends a continuation prompt (bug #2 fix)"
+else
+  fail "skills/delegate-to-codex/SKILL.md retry missing continuation prompt (regression of bug #2)"
+fi
+
+# Regression: delegate-to-any must NOT duplicate per-runtime launch blocks.
+# Improvement #6 — eight inline blocks drifted once and caused bug #1. The
+# router should reference delegate-to-<runtime>/SKILL.md / delegate.sh instead.
+ANY="$PROJECT_ROOT/skills/delegate-to-any/SKILL.md"
+# Count distinct runtime launch blocks (each begins with a 'nohup <rt> ...' or
+# 'cd "$WORK_DIR" && nohup <rt> ...' line). After dedup, only the illustrative
+# opencode example in the skeleton comment should remain.
+runtime_launch_lines=$(grep -cE 'nohup (opencode|pi|mimo|hermes|kimi|agy) (run|chat|-p)' "$ANY")
+if [ "$runtime_launch_lines" -le 1 ]; then
+  pass "skills/delegate-to-any/SKILL.md delegates launch to per-runtime skills (dedup #6)"
+else
+  fail "skills/delegate-to-any/SKILL.md has $runtime_launch_lines inline launch blocks (regression of dedup #6)"
+fi
+# Must reference the per-runtime skills and/or delegate.sh as source of truth.
+grep -qE 'delegate-to-(opencode|pi)/SKILL\.md|scripts/delegate\.sh' "$ANY" \
+  && pass "skills/delegate-to-any/SKILL.md references per-runtime skill / delegate.sh" \
+  || fail "skills/delegate-to-any/SKILL.md missing reference to per-runtime launch source"
 
 # Sanity: every skill that defines WORK_DIR must actually use it. Catches the
 # class of bug #1 generally (defined-but-unused). A runtime may use it

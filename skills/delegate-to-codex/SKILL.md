@@ -56,6 +56,8 @@ codex exec --help 2>&1 | grep -E "\-\-cd|\-s sandbox|bypass-approvals|resume"
 
 ### Launch
 
+**Critical: pipe a framing instruction followed by the handoff via stdin.** Codex `exec ... -` reads stdin as the instruction set. Sending the raw handoff with no framing risks Codex treating the markdown as content to discuss rather than a task to execute. Prepend a one-line directive so the role of the handoff is unambiguous.
+
 ```bash
 WORK_DIR=".opencode/worktrees/TASK-N"
 [ ! -d "$WORK_DIR" ] && WORK_DIR="."
@@ -63,12 +65,13 @@ WORK_DIR=".opencode/worktrees/TASK-N"
 TASK_FILE=".opencode/tasks/TASK-N.md"
 TIMEOUT_SECS=<seconds from timeout tier>
 
-# Add -m "<model>" only if user specified one
-# Pipe handoff via stdin using '-'; codex reads the full file as instructions
+# Add -m "<model>" only if user specified one.
+# Pipe a framing line + the handoff via stdin using '-'; the printf directive
+# is exported so the inner bash sees it without quoting the file path inline.
 export _CODEX_WORK_DIR="$WORK_DIR"
 export _CODEX_TASK_FILE="$TASK_FILE"
 nohup bash -c \
-  'codex exec -C "$_CODEX_WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox - < "$_CODEX_TASK_FILE"' \
+  '{ printf "%s\n\n" "Execute the task described in the handoff document below. Follow all instructions in it exactly."; cat "$_CODEX_TASK_FILE"; } | codex exec -C "$_CODEX_WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox -' \
   > ".opencode/tasks/TASK-N.log" 2>&1 &
 
 TASK_PID=$!
@@ -96,12 +99,12 @@ Tell the user: task ID, working directory (`$WORK_DIR`), timeout deadline.
 
 ### Retry (Step 5 Case 2)
 
-When self-healing retries, resume the last session and append the handoff as additional context:
+When self-healing retries, resume the last session **with a continuation prompt**. `codex exec resume --last` needs an instruction to act on; an empty invocation will idle or exit. Pipe a short directive (and re-attach the handoff path for reference) via stdin:
 ```bash
 export _CODEX_WORK_DIR="$WORK_DIR"
 export _CODEX_TASK_FILE="$TASK_FILE"
 nohup bash -c \
-  'codex exec resume --last -C "$_CODEX_WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox' \
+  '{ printf "%s\n\n" "Continue the task from where you left off. The original task handoff is at: $_CODEX_TASK_FILE — re-read it if you need full context."; } | codex exec resume --last -C "$_CODEX_WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox -' \
   > ".opencode/tasks/TASK-N.log" 2>&1 &
 unset _CODEX_WORK_DIR _CODEX_TASK_FILE
 ```

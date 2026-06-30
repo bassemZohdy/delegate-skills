@@ -106,6 +106,11 @@ The `active_form` field is critical — it tells a reviewing agent what to look 
 
 Save to `.opencode/tasks/TASK-N.md`. This is the agent's only briefing — it has no conversation history. Write as if the reader is starting cold.
 
+**Ensure the directory exists before writing** — the launch blocks in Step 4 also write PID/log/retries files into `.opencode/tasks/`, and on a first-ever delegation nothing creates it:
+```bash
+mkdir -p .opencode/tasks .opencode/worktrees
+```
+
 ```markdown
 # Task Handoff — TASK-N
 
@@ -276,3 +281,4 @@ Mark `status: timed_out`. Preserve the log and all files the agent wrote — par
 - `depends_on` lists task IDs whose outputs this task needs — agents skip tasks with incomplete dependencies
 - A task is `completed` only when verification expectations are explicitly confirmed, not just when the process exits
 - Checkpoint at natural phase boundaries (after each file group, after each test run) by updating sub-task checkboxes
+- **TODO.md has no lock.** Two concurrent delegations running Step 1 (`grep -c '^## [TASK-'`) at the same instant can read the same count and pick the same `TASK-N`, corrupting the ledger. For parallel delegation from a single caller, assign task IDs sequentially *before* launching in parallel. For parallel callers, serialize the "pick next ID + append block" step (e.g. via `flock TODO.md` on systems that support it), or pre-allocate a block of IDs.

@@ -90,235 +90,45 @@ If no model was requested, omit the model flag entirely for all runtimes.
 
 ### Launch
 
-Use the launch pattern for the chosen runtime. In all patterns below, `TASK-N` refers to the task ID determined in Step 1, `WORK_DIR` / `TASK_FILE` / `PROJECT_ROOT` are as established in the shared workflow, and `TIMEOUT_SECS` is the value selected from the timeout tiers in `docs/usage.md`.
+Use the launch pattern for the chosen runtime. Two equivalent paths:
 
----
+1. **Preferred — use the shared launcher** (encapsulates worktree reuse, the right flags per runtime, PID/retries files, and the watchdog for all eight runtimes):
+   ```bash
+   bash scripts/delegate.sh <selected-runtime> TASK-N $TIMEOUT_SECS
+   ```
+   Where `<selected-runtime>` is the binary chosen above (`opencode`, `pi`, `mimo`, `hermes`, `kimi`, `codex`, or `agy`). For `oh-my-opencode`, use path 2 below — `delegate.sh` targets the `opencode` binary specifically.
 
-**`oh-my-opencode` (omo):**
+2. **Direct launch** — copy the exact Launch block from the chosen runtime's own skill: [`delegate-to-<runtime>/SKILL.md`](delegate-to-opencode/SKILL.md) (opencode/omo), [`delegate-to-pi`](delegate-to-pi/SKILL.md), [`delegate-to-mimo`](delegate-to-mimo/SKILL.md), [`delegate-to-hermes`](delegate-to-hermes/SKILL.md), [`delegate-to-kimi`](delegate-to-kimi/SKILL.md), [`delegate-to-codex`](delegate-to-codex/SKILL.md), [`delegate-to-agy`](delegate-to-agy/SKILL.md).
+
+   The per-runtime skill is the **single source of truth** for each runtime's flags and handoff-delivery mechanism (`--file`, `@path`, stdin, or absolute-path-in-prompt). Do not paraphrase it — copy the block verbatim. This avoids the drift that occurs when launch commands are maintained in two places.
+
+Every per-runtime launch block shares the same mechanical skeleton (shown once here so the common parts are auditable in one place). The runtime-specific line is the `nohup <runtime> ...` invocation; everything else is identical across runtimes:
 
 ```bash
-WORK_DIR=".opencode/worktrees/TASK-N"
-[ ! -d "$WORK_DIR" ] && WORK_DIR="."
+# Common skeleton — the runtime-specific nohup line comes from the per-runtime skill.
+PROJECT_ROOT="$(pwd)"                       # capture BEFORE any cd (pi/hermes/kimi/agy cd into the worktree)
+WORK_DIR="$PROJECT_ROOT/.opencode/worktrees/TASK-N"
+[ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
+mkdir -p "$PROJECT_ROOT/.opencode/tasks"    # ensure PID/log/retries files can be written
+TIMEOUT_SECS=<seconds from timeout tier>
 
-OMO_FILE_FLAG=""
-OMO_DIR_FLAG=""
-OMO_HELP=$(oh-my-opencode run --help 2>&1)
-echo "$OMO_HELP" | grep -q "\-\-file" && OMO_FILE_FLAG="--file .opencode/tasks/TASK-N.md"
-echo "$OMO_HELP" | grep -q "\-\-dir" && OMO_DIR_FLAG="--dir $WORK_DIR"
-
-if [ -n "$OMO_DIR_FLAG" ]; then
-  # --dir supported: pass it directly (no cd needed)
-  # shellcheck disable=SC2086
-  nohup oh-my-opencode run \
-    "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
-    $OMO_FILE_FLAG \
-    $OMO_DIR_FLAG \
-    --yes \
-    > ".opencode/tasks/TASK-N.log" 2>&1 &
-else
-  # No --dir flag: cd into the worktree so isolation still holds.
-  # Capture PROJECT_ROOT first so log/pid paths resolve from project root.
-  PROJECT_ROOT="$(pwd)"
-  cd "$WORK_DIR" && nohup oh-my-opencode run \
-    "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
-    $OMO_FILE_FLAG \
-    --yes \
-    > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
-fi
+# >>> Insert the chosen runtime's nohup launch line here (from delegate-to-<runtime>/SKILL.md).
+# >>> It must background with '&' and redirect to the log path below.
+# >>> e.g. opencode:
+# nohup opencode run "..." --file ".opencode/tasks/TASK-N.md" --dir "$WORK_DIR" \
+#   --dangerously-skip-permissions > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
 
 TASK_PID=$!
-echo $TASK_PID > ".opencode/tasks/TASK-N.pid"
-echo 0 > ".opencode/tasks/TASK-N.retries"
+echo $TASK_PID > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
+echo 0 > "$PROJECT_ROOT/.opencode/tasks/TASK-N.retries"
 
 # Watchdog: SIGTERM after timeout, SIGKILL after 30s grace
 (sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
   && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > ".opencode/tasks/TASK-N.watchdog.pid"
-```
-
-Use `omo` as the runtime label in TODO.md and on the worktree branch name.
-
----
-
-**`opencode`:**
-
-```bash
-WORK_DIR=".opencode/worktrees/TASK-N"
-[ ! -d "$WORK_DIR" ] && WORK_DIR="."
-
-nohup opencode run \
-  "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
-  --file ".opencode/tasks/TASK-N.md" \
-  --dir "$WORK_DIR" \
-  --dangerously-skip-permissions \
-  > ".opencode/tasks/TASK-N.log" 2>&1 &
-
-TASK_PID=$!
-echo $TASK_PID > ".opencode/tasks/TASK-N.pid"
-echo 0 > ".opencode/tasks/TASK-N.retries"
-
-(sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
-  && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > ".opencode/tasks/TASK-N.watchdog.pid"
-```
-
-Alternatively: `bash scripts/delegate.sh opencode TASK-N $TIMEOUT_SECS`
-
----
-
-**`pi`:**
-
-```bash
-PROJECT_ROOT="$(pwd)"
-WORK_DIR="$PROJECT_ROOT/.opencode/worktrees/TASK-N"
-[ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
-
-cd "$WORK_DIR" && nohup pi -p \
-  "@$PROJECT_ROOT/.opencode/tasks/TASK-N.md" \
-  "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
-  --approve \
-  > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
-
-TASK_PID=$!
-echo $TASK_PID > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
-echo 0 > "$PROJECT_ROOT/.opencode/tasks/TASK-N.retries"
-
-(sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
-  && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
 echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.watchdog.pid"
 ```
 
----
-
-**`mimo`:**
-
-```bash
-WORK_DIR=".opencode/worktrees/TASK-N"
-[ ! -d "$WORK_DIR" ] && WORK_DIR="."
-
-MIMO_HELP=$(mimo run --help 2>&1)
-MIMO_DIR_FLAG="";  echo "$MIMO_HELP" | grep -q -- "--dir"  && MIMO_DIR_FLAG="--dir $WORK_DIR"
-MIMO_SKIP_FLAG=""; echo "$MIMO_HELP" | grep -q "skip-permissions" && MIMO_SKIP_FLAG="--dangerously-skip-permissions"
-MIMO_FILE_FLAG=""; echo "$MIMO_HELP" | grep -q -- "--file" && MIMO_FILE_FLAG="--file .opencode/tasks/TASK-N.md"
-
-# shellcheck disable=SC2086
-nohup mimo run \
-  "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
-  $MIMO_FILE_FLAG $MIMO_DIR_FLAG $MIMO_SKIP_FLAG \
-  > ".opencode/tasks/TASK-N.log" 2>&1 &
-
-TASK_PID=$!
-echo $TASK_PID > ".opencode/tasks/TASK-N.pid"
-echo 0 > ".opencode/tasks/TASK-N.retries"
-
-(sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
-  && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > ".opencode/tasks/TASK-N.watchdog.pid"
-```
-
----
-
-**`hermes`:**
-
-```bash
-PROJECT_ROOT="$(pwd)"
-WORK_DIR="$PROJECT_ROOT/.opencode/worktrees/TASK-N"
-[ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
-
-TASK_FILE="$PROJECT_ROOT/.opencode/tasks/TASK-N.md"
-
-cd "$WORK_DIR" && nohup hermes chat \
-  -q "Read $TASK_FILE and execute the task described in it. Follow all instructions exactly." \
-  --yolo --accept-hooks -Q \
-  > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
-
-TASK_PID=$!
-echo $TASK_PID > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
-echo 0 > "$PROJECT_ROOT/.opencode/tasks/TASK-N.retries"
-
-(sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
-  && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.watchdog.pid"
-```
-
----
-
-**`kimi`:**
-
-```bash
-PROJECT_ROOT="$(pwd)"
-WORK_DIR="$PROJECT_ROOT/.opencode/worktrees/TASK-N"
-[ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
-
-TASK_FILE="$PROJECT_ROOT/.opencode/tasks/TASK-N.md"
-
-cd "$WORK_DIR" && nohup kimi \
-  -p "Read $TASK_FILE and execute the task described in it. Follow all instructions exactly." \
-  -y \
-  > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
-
-TASK_PID=$!
-echo $TASK_PID > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
-echo 0 > "$PROJECT_ROOT/.opencode/tasks/TASK-N.retries"
-
-(sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
-  && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.watchdog.pid"
-```
-
----
-
-**`codex`:**
-
-```bash
-WORK_DIR=".opencode/worktrees/TASK-N"
-[ ! -d "$WORK_DIR" ] && WORK_DIR="."
-
-TASK_FILE=".opencode/tasks/TASK-N.md"
-
-export _CODEX_WORK_DIR="$WORK_DIR"
-export _CODEX_TASK_FILE="$TASK_FILE"
-nohup bash -c \
-  'codex exec -C "$_CODEX_WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox - < "$_CODEX_TASK_FILE"' \
-  > ".opencode/tasks/TASK-N.log" 2>&1 &
-
-TASK_PID=$!
-echo $TASK_PID > ".opencode/tasks/TASK-N.pid"
-echo 0 > ".opencode/tasks/TASK-N.retries"
-unset _CODEX_WORK_DIR _CODEX_TASK_FILE
-
-(sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
-  && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > ".opencode/tasks/TASK-N.watchdog.pid"
-```
-
----
-
-**`agy`:**
-
-```bash
-PROJECT_ROOT="$(pwd)"
-WORK_DIR="$PROJECT_ROOT/.opencode/worktrees/TASK-N"
-[ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
-
-TASK_FILE="$PROJECT_ROOT/.opencode/tasks/TASK-N.md"
-
-nohup agy \
-  --print "Read $TASK_FILE and execute the task described in it. All file changes must be made inside $WORK_DIR. Follow all instructions exactly." \
-  --add-dir "$WORK_DIR" \
-  --dangerously-skip-permissions \
-  > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
-
-TASK_PID=$!
-echo $TASK_PID > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
-echo 0 > "$PROJECT_ROOT/.opencode/tasks/TASK-N.retries"
-
-(sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
-  && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.watchdog.pid"
-```
-
----
+Use the runtime label in TODO.md and on the worktree branch name: `omo` for oh-my-opencode, otherwise the binary name (`opencode`, `pi`, `mimo`, `hermes`, `kimi`, `codex`, `agy`).
 
 Tell the user: selected runtime, task ID, working directory, log path, timeout deadline.
 

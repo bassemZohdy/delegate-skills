@@ -159,10 +159,10 @@ case "$RUNTIME" in
     export _CODEX_TASK_FILE="$TASK_FILE"
     export _CODEX_WORK_DIR="$WORK_DIR"
     nohup bash -c \
-      'codex exec -C "$_CODEX_WORK_DIR" \
+      '{ printf "%s\n\n" "Execute the task described in the handoff document below. Follow all instructions in it exactly."; cat "$_CODEX_TASK_FILE"; } | codex exec -C "$_CODEX_WORK_DIR" \
         -s danger-full-access \
         --dangerously-bypass-approvals-and-sandbox \
-        - < "$_CODEX_TASK_FILE"' \
+        -' \
       > "$LOG_FILE" 2>&1 &
     TASK_PID=$!
     ;;

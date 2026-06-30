@@ -105,8 +105,11 @@ bash tests/run-tests.sh   # no external dependencies
 - **pi path corruption**: `cd` changes the shell's cwd. Capture `PROJECT_ROOT="$(pwd)"` before `cd`ing and use absolute paths for all `.opencode/tasks/*` references.
 - **hermes/kimi/agy — same cd issue**: same fix as pi. All three have no `--dir` flag.
 - **mimo flags**: `--dangerously-skip-permissions`, `--dir`, and `--file` are checked at runtime via `mimo run --help`. Only flags confirmed present are used.
-- **codex stdin**: uses `nohup bash -c '... < "$_CODEX_TASK_FILE"'` via exported env vars to avoid quoting issues with paths containing spaces.
-- **codex no `--continue` flag**: resume uses `codex exec resume --last` (a subcommand, not a flag).
+- **codex stdin**: uses `nohup bash -c '{ printf ...; cat "$_CODEX_TASK_FILE"; } | codex exec ... -'` via exported env vars to avoid quoting issues with paths containing spaces. The framing `printf` is mandatory — piping the raw handoff risks Codex treating it as content to discuss rather than a task to execute.
+- **codex no `--continue` flag**: resume uses `codex exec resume --last` (a subcommand, not a flag). It still needs an instruction — pipe a continuation prompt via stdin; an empty invocation will idle or exit.
 - **agy no model flag**: model selection is config-only. If user requests a model, instruct them to update Agy's config file instead.
 - **hermes `--worktree` built-in flag**: hermes has its own worktree management. Do NOT pass `--worktree` — the skill manages worktrees itself to maintain cross-agent consistency in TODO.md.
 - **Windows PATH**: after `npm install -g`, restart your terminal so the new binary is on the shell PATH that Claude Code uses.
+- **TODO.md has no lock**: two concurrent delegations can read the same `grep -c '^## [TASK-'` count and collide on the same `TASK-N`. Assign task IDs sequentially *before* launching in parallel, or serialize the pick-and-append step (e.g. `flock TODO.md`).
+- **watchdog must be cancelled on completion**: the Step 4 watchdog subshell sleeps until timeout and will fire even after success, risking PID reuse. The shared workflow's Case 4 (and the terminal-failure branches) cancel it — don't skip that step.
+- **`.opencode/tasks/` must exist before launch**: Step 3 creates it (`mkdir -p .opencode/tasks .opencode/worktrees`). The Step 4 launch blocks write PID/log/retries files into it and rely on this; skip Step 3 and a first-ever delegation fails on the PID write.
