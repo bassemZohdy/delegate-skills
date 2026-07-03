@@ -251,3 +251,35 @@ Adding an existence check around the "preferred" scripts/delegate.sh launch path
 ### Verification
 - `grep -A2 'if \[ -f scripts/delegate.sh' skills/delegate-to-any/SKILL.md` shows the guard
 - `bash tests/run-tests.sh` passes (420/420)
+
+## [TASK-10] Add behavioral test layer for delegate.sh
+- status: completed
+- owner: (cleared)
+- reviewed: 2026-07-03T14:37:08Z
+- agent: review / default
+- started: 2026-07-03T14:37:08Z
+- worktree: none
+- branch: none
+- base_sha: 8aa139bfcba8209f681add8bb421de4107fb9562
+- dirty_tree: false
+- handoff: none
+- output_ref: tests/test-behavior.sh, tests/fixtures/mock-bin/
+- retries: 0
+- depends_on: []
+- blocked_by: []
+
+### Active Form
+Building a mock-CLI-based behavioral test layer that actually executes helpers/scripts/delegate.sh in isolated sandboxes, since the existing structure tests only grep-match text and can't verify runtime correctness (the skills/*/SKILL.md files are natural-language AI instructions, not executable, so delegate.sh is the only artifact that can be tested by real execution).
+
+### Sub-tasks
+- [x] Add mock CLI binaries for all 7 runtimes (tests/fixtures/mock-bin/)
+- [x] Add 16 behavioral test cases covering happy paths, error paths, PID-capture regression (pi/hermes/kimi), mimo flag-detection branches, codex stdin framing, and watchdog SIGTERM firing
+- [x] Fix a process-leak bug found during verification — the watchdog subshell delegate.sh always spawns was not being killed by test cleanup, leaking `sleep 30`/`sleep 120` processes on the host after every run
+- [x] Fix a flaky test caused by an off-by-10x timeout bug in a wait-for-file helper
+- [x] Validate via mutation testing: temporarily reintroduced the v1.1.0 subshell-PID bug into delegate.sh's `pi` case and confirmed the new test failed; restored and confirmed it passed again
+
+### Verification
+- `bash tests/run-tests.sh` passes (436/436), run 6+ times in a row with zero failures
+- `bash tests/test-behavior.sh` passes standalone
+- `ps ax | grep -E 'sleep 30|sleep 120|mock-bin'` shows nothing after a full suite run (no leaked processes)
+- Mutation test: reverting the pi-case fix in delegate.sh causes exactly the pi-specific regression tests to fail (both the pre-existing structure-level one and the new behavioral one) and nothing else

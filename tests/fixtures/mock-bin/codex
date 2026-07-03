@@ -1,0 +1,42 @@
+#!/bin/bash
+# Mock codex runtime for testing
+set -euo pipefail
+
+: "${MOCK_OUT_DIR:?MOCK_OUT_DIR not set}"
+mkdir -p "$MOCK_OUT_DIR"
+
+# Record invocation details
+printf '%s\n' "$@" > "$MOCK_OUT_DIR/codex.args"
+pwd > "$MOCK_OUT_DIR/codex.cwd"
+echo $$ > "$MOCK_OUT_DIR/codex.pid"
+
+# Capture stdin (unique to codex)
+cat > "$MOCK_OUT_DIR/codex.stdin"
+
+# TERM trap to record kill signal
+trap 'echo "KILLED" > "$MOCK_OUT_DIR/codex.status"; exit 143' TERM
+
+# Heartbeat loop
+MOCK_DURATION="${MOCK_DURATION:-2}"
+MOCK_HANG="${MOCK_HANG:-0}"
+START_TIME=$(date +%s)
+
+while true; do
+  date +%s > "$MOCK_OUT_DIR/codex.heartbeat"
+  sleep 0.2
+
+  if [ "$MOCK_HANG" = "1" ]; then
+    continue
+  fi
+
+  CURRENT_TIME=$(date +%s)
+  ELAPSED=$((CURRENT_TIME - START_TIME))
+
+  if [ "$ELAPSED" -ge "$MOCK_DURATION" ]; then
+    break
+  fi
+done
+
+# Normal completion
+echo "DONE" > "$MOCK_OUT_DIR/codex.status"
+echo "Mock codex completed successfully"

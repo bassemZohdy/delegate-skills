@@ -24,6 +24,11 @@ source "$SCRIPT_DIR/test-structure.sh"
 echo "  ─── $PASS passed, $FAIL failed"
 
 echo ""
+echo "━━━ Behavior Tests ━━━"
+source "$SCRIPT_DIR/test-behavior.sh"
+echo "  ─── $PASS passed, $FAIL failed"
+
+echo ""
 echo "════════════════════════════════════════"
 echo "  Total: $PASS passed, $FAIL failed"
 echo "════════════════════════════════════════"

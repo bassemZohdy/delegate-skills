@@ -63,8 +63,13 @@ helpers/
 ```
 tests/
 ├── run-tests.sh
-└── test-structure.sh
+├── test-structure.sh            # structure/text-pattern assertions
+├── test-behavior.sh             # behavioral tests — executes delegate.sh for real
+└── fixtures/
+    └── mock-bin/                # mock CLI binaries used by test-behavior.sh
 ```
+
+Two-layer approach: structure tests grep-match frontmatter and text patterns (420 assertions); behavior tests actually *execute* `delegate.sh` against mocks in isolated sandboxes (16 test cases verifying real process/filesystem state).
 
 Other top-level files:
 - `.opencode/` — runtime artifacts (task logs, PID files, worktrees). **Do not edit by hand.**

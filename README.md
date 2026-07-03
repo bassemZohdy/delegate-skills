@@ -204,7 +204,10 @@ delegate-skills/
 │
 └── tests/                           # test suite
     ├── run-tests.sh
-    └── test-structure.sh
+    ├── test-structure.sh            # structure/text-pattern assertions
+    ├── test-behavior.sh             # behavioral tests — executes delegate.sh for real
+    └── fixtures/
+        └── mock-bin/                # mock CLI binaries used by test-behavior.sh
 ```
 
 ---
@@ -225,7 +228,12 @@ delegate-skills/
 bash tests/run-tests.sh
 ```
 
-Validates structure, frontmatter, workflow references, helper files, runtime coverage, **and** semantic regression checks that assert behavioral correctness (worktree isolation, real agent PID capture, watchdog teardown, Codex handoff framing). No external dependencies.
+Two layers:
+
+- **Structure tests** (`tests/test-structure.sh`) — frontmatter, workflow references, helper files, runtime coverage, and grep-based semantic regression checks (worktree isolation, real agent PID capture references, watchdog teardown, Codex handoff framing).
+- **Behavior tests** (`tests/test-behavior.sh`) — actually *executes* `helpers/scripts/delegate.sh` against mock CLI binaries (`tests/fixtures/mock-bin/`) in isolated `mktemp -d` sandboxes, asserting real process and filesystem state: git worktree creation, live PID capture (the exact regression class from the v1.1.0 subshell-PID bug), correct flags passed per runtime, watchdog SIGTERM firing on timeout, and more. The `skills/*/SKILL.md` files themselves are natural-language instructions for an AI to follow, not executable, so this is the practical ceiling for automated testing of the runtime-launch logic — everything that actually runs (`delegate.sh`) is covered by real execution, not just text matching.
+
+No external dependencies either way — pure bash, git, and standard coreutils.
 
 ---
 
