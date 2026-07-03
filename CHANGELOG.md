@@ -5,6 +5,26 @@ the `metadata.version` field in each skill's `SKILL.md`.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.0] — 2026-07-03
+
+Follow-up review. Two stale cross-references from the v1.1.0 restructure and one
+launcher-script robustness gap.
+
+### Fixed
+
+- **stale `docs/workflow.md` references** (`helpers/scripts/delegate.sh`,
+  `TODO.md`): both still pointed at the pre-restructure path; the shared
+  workflow doc has lived at `skills/shared/workflow.md` since v1.1.0. Updated
+  both references.
+
+### Changed
+
+- **`delegate-to-any` launcher fallback**: the "preferred" launch path
+  (`bash scripts/delegate.sh ...`) assumed the script had been copied into the
+  target project and had no guard if it was absent. Added an existence check
+  that falls back to the per-runtime direct-launch path, matching the pattern
+  already used in `helpers/adapters/generic-prompt.md` and the Hermes adapter.
+
 ## [1.1.0] — 2026-06-30
 
 Behavioral fixes and hardening from a full skills review. All changes are
@@ -78,5 +98,6 @@ runtime-specific) plus helpers and adapters, conforming to the
   `helpers/hermes/delegate-tasks/SKILL.md` (hermes-native skill).
 - 402-assertion structure test suite.
 
+[1.2.0]: https://github.com/bassemZohdy/delegate-skills/releases/tag/v1.2.0
 [1.1.0]: https://github.com/bassemZohdy/delegate-skills/releases/tag/v1.1.0
 [1.0.0]: https://github.com/bassemZohdy/delegate-skills/releases/tag/v1.0.0

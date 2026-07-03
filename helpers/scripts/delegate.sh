@@ -53,7 +53,7 @@ if [ ! -f "$TASK_FILE" ]; then
   cat >&2 <<EOF
 ERROR: Handoff document not found: $TASK_FILE
 Write the handoff document before calling delegate.sh.
-See docs/workflow.md Steps 2–3 for the required format.
+See skills/shared/workflow.md Steps 2–3 for the required format.
 EOF
   exit 1
 fi

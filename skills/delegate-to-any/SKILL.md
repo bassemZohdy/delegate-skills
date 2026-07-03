@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and at least one of: oh-my-opencode, opencode, pi, mimo, hermes, kimi, codex, or agy on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.1.0
+  version: 1.2.0
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -92,11 +92,13 @@ If no model was requested, omit the model flag entirely for all runtimes.
 
 Use the launch pattern for the chosen runtime. Two equivalent paths:
 
-1. **Preferred — use the shared launcher** (encapsulates worktree reuse, the right flags per runtime, PID/retries files, and the watchdog for all eight runtimes):
+1. **Preferred — use the shared launcher, if present** (encapsulates worktree reuse, the right flags per runtime, PID/retries files, and the watchdog for all eight runtimes). Check it exists before using it — it's an optional manual copy per `docs/install.md`, not guaranteed to be in every project:
    ```bash
-   bash scripts/delegate.sh <selected-runtime> TASK-N $TIMEOUT_SECS
+   if [ -f scripts/delegate.sh ]; then
+     bash scripts/delegate.sh <selected-runtime> TASK-N $TIMEOUT_SECS
+   fi
    ```
-   Where `<selected-runtime>` is the binary chosen above (`opencode`, `pi`, `mimo`, `hermes`, `kimi`, `codex`, or `agy`). For `oh-my-opencode`, use path 2 below — `delegate.sh` targets the `opencode` binary specifically.
+   Where `<selected-runtime>` is the binary chosen above (`opencode`, `pi`, `mimo`, `hermes`, `kimi`, `codex`, or `agy`). For `oh-my-opencode`, use path 2 below — `delegate.sh` targets the `opencode` binary specifically. If `scripts/delegate.sh` is absent, fall back to path 2.
 
 2. **Direct launch** — copy the exact Launch block from the chosen runtime's own skill: [`delegate-to-<runtime>/SKILL.md`](delegate-to-opencode/SKILL.md) (opencode/omo), [`delegate-to-pi`](delegate-to-pi/SKILL.md), [`delegate-to-mimo`](delegate-to-mimo/SKILL.md), [`delegate-to-hermes`](delegate-to-hermes/SKILL.md), [`delegate-to-kimi`](delegate-to-kimi/SKILL.md), [`delegate-to-codex`](delegate-to-codex/SKILL.md), [`delegate-to-agy`](delegate-to-agy/SKILL.md).
 

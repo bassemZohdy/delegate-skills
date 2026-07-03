@@ -2,7 +2,7 @@
 
 Append-only. Never delete or rewrite existing `## [TASK-N]` blocks — only update fields within them.
 
-See `docs/workflow.md` for the full field schema and status lifecycle.
+See `skills/shared/workflow.md` for the full field schema and status lifecycle.
 
 ## [TASK-1] Fix omo launch block missing worktree isolation
 - status: completed
@@ -196,4 +196,58 @@ Documenting the no-lock parallel-delegation hazard in TODO.md Conventions + AGEN
 ### Verification
 - `grep -qi 'no lock' skills/shared/workflow.md`
 - `grep -qi 'no lock\|watchdog must be cancelled\|must exist before launch' AGENTS.md`
+- `bash tests/run-tests.sh` passes (420/420)
+
+## [TASK-8] Fix stale docs/workflow.md references
+- status: completed
+- owner: (cleared)
+- reviewed: 2026-07-03T00:00:00Z
+- agent: review / default
+- started: 2026-07-03T00:00:00Z
+- worktree: none
+- branch: none
+- base_sha: 895f3de
+- dirty_tree: false
+- handoff: none
+- output_ref: helpers/scripts/delegate.sh, TODO.md
+- retries: 0
+- depends_on: []
+- blocked_by: []
+
+### Active Form
+Fixing two leftover references to docs/workflow.md left over from the v1.1.0 restructure that moved the shared workflow doc to skills/shared/workflow.md.
+
+### Sub-tasks
+- [x] Fix error-message path in helpers/scripts/delegate.sh preflight check
+- [x] Fix preamble reference in TODO.md
+
+### Verification
+- `grep -rn "docs/workflow.md" helpers/scripts/delegate.sh TODO.md` returns nothing
+- `bash tests/run-tests.sh` passes (420/420)
+
+## [TASK-9] Add scripts/delegate.sh existence guard in delegate-to-any
+- status: completed
+- owner: (cleared)
+- reviewed: 2026-07-03T00:00:00Z
+- agent: review / default
+- started: 2026-07-03T00:00:00Z
+- worktree: none
+- branch: none
+- base_sha: 895f3de
+- dirty_tree: false
+- handoff: none
+- output_ref: skills/delegate-to-any/SKILL.md
+- retries: 0
+- depends_on: []
+- blocked_by: []
+
+### Active Form
+Adding an existence check around the "preferred" scripts/delegate.sh launch path in delegate-to-any/SKILL.md so it falls back to the direct per-runtime launch path when the script hasn't been copied into the target project, matching the pattern already used in helpers/adapters/generic-prompt.md and the Hermes adapter.
+
+### Sub-tasks
+- [x] Wrap the `bash scripts/delegate.sh ...` invocation in an `[ -f scripts/delegate.sh ]` check
+- [x] Document the fallback to path 2 (direct launch) when the script is absent
+
+### Verification
+- `grep -A2 'if \[ -f scripts/delegate.sh' skills/delegate-to-any/SKILL.md` shows the guard
 - `bash tests/run-tests.sh` passes (420/420)
