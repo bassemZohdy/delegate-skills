@@ -2,10 +2,10 @@
 name: delegate-to-any
 description: Delegates coding tasks to whichever agent CLI is available on the system — automatically selects the best installed runtime (oh-my-opencode, opencode, pi, mimo, hermes, kimi, codex, agy) by priority order. Use this when you don't care which agent runs the task, or when you want maximum portability across machines with different tools installed.
 license: MIT
-compatibility: Requires git, bash, and at least one of: oh-my-opencode, opencode, pi, mimo, hermes, kimi, codex, or agy on PATH.
+compatibility: "Requires git, bash, and at least one of: oh-my-opencode, opencode, pi, mimo, hermes, kimi, codex, or agy on PATH."
 metadata:
   author: Bassem Zohdy
-  version: 1.2.1
+  version: 1.2.2
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"

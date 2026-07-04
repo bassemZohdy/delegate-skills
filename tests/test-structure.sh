@@ -198,6 +198,17 @@ for skill in "${SKILLS[@]}"; do
     && pass "skills/$skill/SKILL.md has frontmatter delimiter" \
     || fail "skills/$skill/SKILL.md missing frontmatter delimiter"
 
+  if command -v python3 &>/dev/null; then
+    python3 -c "
+import sys, yaml
+text = sys.stdin.read()
+parts = text.split('---', 2)
+yaml.safe_load(parts[1])
+" < "$SKILL_FILE" 2>/dev/null \
+      && pass "skills/$skill/SKILL.md frontmatter is valid YAML" \
+      || fail "skills/$skill/SKILL.md frontmatter is NOT valid YAML (unquoted colon in a value?)"
+  fi
+
   grep -q "^name: $skill" "$SKILL_FILE" \
     && pass "skills/$skill/SKILL.md has correct name field" \
     || fail "skills/$skill/SKILL.md name field incorrect or missing"

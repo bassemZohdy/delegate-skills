@@ -5,6 +5,21 @@ the `metadata.version` field in each skill's `SKILL.md`.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.2] — 2026-07-04
+
+### Fixed
+
+- **invalid YAML frontmatter** (`skills/delegate-to-any/SKILL.md`): the
+  `compatibility:` field's value contained an unquoted `at least one of:` colon,
+  which YAML parses as a nested mapping key rather than plain text. This broke
+  frontmatter parsing for every tool that loads the skill (Claude Code, other
+  agentskills.io-compatible runtimes), so `/delegate-to-any` failed to load
+  entirely. The value is now quoted. Added a YAML-parse check to
+  `tests/test-structure.sh` (via `python3 -c ... < file`, piped through stdin to
+  avoid MSYS/Windows path-translation issues with `python3 -c "... r'$path' ..."`)
+  so every skill's frontmatter is now validated as parseable YAML, not just
+  checked for the `---` delimiter.
+
 ## [1.2.1] — 2026-07-03
 
 Bugs found via a live end-to-end smoke test (`/delegate-to-any` against installed
