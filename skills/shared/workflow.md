@@ -71,11 +71,11 @@ TASK_N=$((LAST_N + 1))
 - agent: <runtime> / <resolved model ID, or "default" if none specified>
 - started: <ISO-8601>
 - timeout: <chosen from timeout tiers — see docs/usage.md>
-- worktree: .opencode/worktrees/TASK-N   # or "none"
+- worktree: .delegate/worktrees/TASK-N   # or "none"
 - branch: <runtime>/TASK-N               # e.g. opencode/TASK-1, pi/TASK-2 — or "none"
 - base_sha: <git rev-parse HEAD output>  # or "none"
 - dirty_tree: false
-- handoff: .opencode/tasks/TASK-N.md
+- handoff: .delegate/tasks/TASK-N.md
 - output_ref: <where the agent should write its result>
 - retries: 0
 - depends_on: []
@@ -108,7 +108,7 @@ Parallel agents writing to the same working tree corrupt each other. Create an i
 
 ```bash
 RUNTIME=<opencode|pi|mimo — whichever skill is running>
-git worktree add .opencode/worktrees/TASK-$TASK_N -b $RUNTIME/TASK-$TASK_N
+git worktree add .delegate/worktrees/TASK-$TASK_N -b $RUNTIME/TASK-$TASK_N
 ```
 
 If the project is not a git repo, skip this step, log `worktree: none` in TODO.md, and proceed on the current working tree.
@@ -117,11 +117,11 @@ If the project is not a git repo, skip this step, log `worktree: none` in TODO.m
 
 ## Step 3: Write the Handoff Document
 
-Save to `.opencode/tasks/TASK-N.md`. This is the agent's only briefing — it has no conversation history. Write as if the reader is starting cold.
+Save to `.delegate/tasks/TASK-N.md`. This is the agent's only briefing — it has no conversation history. Write as if the reader is starting cold.
 
-**Ensure the directory exists before writing** — the launch blocks in Step 4 also write PID/log/retries files into `.opencode/tasks/`, and on a first-ever delegation nothing creates it:
+**Ensure the directory exists before writing** — the launch blocks in Step 4 also write PID/log/retries files into `.delegate/tasks/`, and on a first-ever delegation nothing creates it:
 ```bash
-mkdir -p .opencode/tasks .opencode/worktrees
+mkdir -p .delegate/tasks .delegate/worktrees
 ```
 
 ```markdown
@@ -134,7 +134,7 @@ mkdir -p .opencode/tasks .opencode/worktrees
 <all files and directories involved, one per line>
 
 ## Worktree Path
-.opencode/worktrees/TASK-N   # or "(current directory — not a git repo)"
+.delegate/worktrees/TASK-N   # or "(current directory — not a git repo)"
 
 ## Architectural Instructions
 <design decisions, patterns, naming conventions, constraints the user specified>
@@ -182,11 +182,11 @@ Poll at roughly 20% of the timeout interval (e.g. every 2 min on a 10 min task, 
 ### A. Check liveness
 
 ```bash
-PID=$(cat .opencode/tasks/TASK-N.pid 2>/dev/null)
+PID=$(cat .delegate/tasks/TASK-N.pid 2>/dev/null)
 kill -0 "$PID" 2>/dev/null && echo "running" || echo "exited"
-LOG_SIZE=$(wc -c < ".opencode/tasks/TASK-N.log" 2>/dev/null || echo 0)
-PREV_SIZE=$(cat ".opencode/tasks/TASK-N.log.size" 2>/dev/null || echo -1)
-echo $LOG_SIZE > ".opencode/tasks/TASK-N.log.size"
+LOG_SIZE=$(wc -c < ".delegate/tasks/TASK-N.log" 2>/dev/null || echo 0)
+PREV_SIZE=$(cat ".delegate/tasks/TASK-N.log.size" 2>/dev/null || echo -1)
+echo $LOG_SIZE > ".delegate/tasks/TASK-N.log.size"
 ```
 
 ### B. Self-healing decision tree
@@ -200,13 +200,13 @@ Work through each case in order; stop at the first that applies.
 The process quit almost immediately with no meaningful output. The most likely cause is a flag or path error at startup.
 
 ```bash
-RETRIES=$(cat ".opencode/tasks/TASK-N.retries" 2>/dev/null || echo 0)
+RETRIES=$(cat ".delegate/tasks/TASK-N.retries" 2>/dev/null || echo 0)
 ```
 
 If `RETRIES < 2`:
 1. Read the log to find the actual error message.
 2. Adjust the launch command based on what the error says (e.g. wrong flag, bad path).
-3. Increment retry counter: `echo $((RETRIES + 1)) > .opencode/tasks/TASK-N.retries`
+3. Increment retry counter: `echo $((RETRIES + 1)) > .delegate/tasks/TASK-N.retries`
 4. Re-launch with the same command structure (Step 4), replacing the watchdog.
 5. Update TODO.md: `retries: <new count>`, add a note under the block explaining what changed.
 
@@ -253,7 +253,7 @@ Check off sub-tasks: `- [x] <sub-task>`
 Clear the `owner` field.
 **Cancel the watchdog** — it is still sleeping and would otherwise fire at the timeout, targeting a PID that may by then belong to an unrelated process (PID reuse):
 ```bash
-WATCHDOG=$(cat ".opencode/tasks/TASK-N.watchdog.pid" 2>/dev/null)
+WATCHDOG=$(cat ".delegate/tasks/TASK-N.watchdog.pid" 2>/dev/null)
 kill "$WATCHDOG" 2>/dev/null
 ```
 **Commit the TODO.md status update** in the main tree — `git add TODO.md && git commit -m "TASK-N: mark completed"` — so the tree is clean again before the next delegation. This is separate from merging the worktree's actual code changes: that merge is a deliberate, user-facing action (see `docs/usage.md`, "What gets created") and should not happen without the user's go-ahead, since it changes their current branch.
@@ -276,8 +276,8 @@ No action needed. Note the current log size and schedule the next poll.
 ### On timeout (watchdog fires or poll interval exceeded)
 
 ```bash
-PID=$(cat .opencode/tasks/TASK-N.pid)
-WATCHDOG=$(cat .opencode/tasks/TASK-N.watchdog.pid 2>/dev/null)
+PID=$(cat .delegate/tasks/TASK-N.pid)
+WATCHDOG=$(cat .delegate/tasks/TASK-N.watchdog.pid 2>/dev/null)
 kill -TERM "$PID" 2>/dev/null
 sleep 30
 kill -KILL "$PID" 2>/dev/null

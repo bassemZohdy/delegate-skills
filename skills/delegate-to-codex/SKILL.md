@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and codex on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.2.1
+  version: 1.2.3
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -59,10 +59,10 @@ codex exec --help 2>&1 | grep -E "\-\-cd|\-s sandbox|bypass-approvals|resume"
 **Critical: pipe a framing instruction followed by the handoff via stdin.** Codex `exec ... -` reads stdin as the instruction set. Sending the raw handoff with no framing risks Codex treating the markdown as content to discuss rather than a task to execute. Prepend a one-line directive so the role of the handoff is unambiguous.
 
 ```bash
-WORK_DIR=".opencode/worktrees/TASK-N"
+WORK_DIR=".delegate/worktrees/TASK-N"
 [ ! -d "$WORK_DIR" ] && WORK_DIR="."
 
-TASK_FILE=".opencode/tasks/TASK-N.md"
+TASK_FILE=".delegate/tasks/TASK-N.md"
 TIMEOUT_SECS=<seconds from timeout tier>
 
 # Add -m "<model>" only if user specified one.
@@ -72,17 +72,17 @@ export _CODEX_WORK_DIR="$WORK_DIR"
 export _CODEX_TASK_FILE="$TASK_FILE"
 nohup bash -c \
   '{ printf "%s\n\n" "Execute the task described in the handoff document below. Follow all instructions in it exactly."; cat "$_CODEX_TASK_FILE"; } | codex exec -C "$_CODEX_WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox -' \
-  > ".opencode/tasks/TASK-N.log" 2>&1 &
+  > ".delegate/tasks/TASK-N.log" 2>&1 &
 
 TASK_PID=$!
-echo $TASK_PID > ".opencode/tasks/TASK-N.pid"
-echo 0 > ".opencode/tasks/TASK-N.retries"
+echo $TASK_PID > ".delegate/tasks/TASK-N.pid"
+echo 0 > ".delegate/tasks/TASK-N.retries"
 unset _CODEX_WORK_DIR _CODEX_TASK_FILE
 
 # Watchdog: SIGTERM after timeout, SIGKILL after 30s grace
 (sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
   && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > ".opencode/tasks/TASK-N.watchdog.pid"
+echo $! > ".delegate/tasks/TASK-N.watchdog.pid"
 ```
 
 **`none` — abort:**
@@ -105,6 +105,6 @@ export _CODEX_WORK_DIR="$WORK_DIR"
 export _CODEX_TASK_FILE="$TASK_FILE"
 nohup bash -c \
   '{ printf "%s\n\n" "Continue the task from where you left off. The original task handoff is at: $_CODEX_TASK_FILE — re-read it if you need full context."; } | codex exec resume --last -C "$_CODEX_WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox -' \
-  > ".opencode/tasks/TASK-N.log" 2>&1 &
+  > ".delegate/tasks/TASK-N.log" 2>&1 &
 unset _CODEX_WORK_DIR _CODEX_TASK_FILE
 ```

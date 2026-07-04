@@ -5,6 +5,19 @@ the `metadata.version` field in each skill's `SKILL.md`.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.3] — 2026-07-04
+
+### Fixed
+
+- **runtime artifacts hardcoded to `.opencode/`** (`helpers/scripts/delegate.sh`
+  and all per-runtime `SKILL.md` files): task handoff docs, worktrees, PID/log
+  files, and retry counters were written under `.opencode/tasks` and
+  `.opencode/worktrees` regardless of which runtime (`mimo`, `pi`, `hermes`,
+  `kimi`, `codex`, `agy`) was actually delegating the task. Renamed to the
+  runtime-agnostic `.delegate/tasks` and `.delegate/worktrees` across
+  `delegate.sh`, both `skills/` and `.agents/skills/` mirrors, docs, tests, and
+  `.gitignore`.
+
 ## [1.2.2] — 2026-07-04
 
 ### Fixed

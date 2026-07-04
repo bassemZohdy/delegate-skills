@@ -63,7 +63,7 @@ Override by stating complexity explicitly: "simple change" → Tier 1, "migratio
 ```
 your-project/
 ├── TODO.md                              # shared task ledger (append-only)
-└── .opencode/
+└── .delegate/
     ├── tasks/
     │   ├── TASK-N.md                   # handoff document
     │   ├── TASK-N.log                  # agent output
@@ -80,7 +80,7 @@ After a successful run, merge the worktree (replace `<runtime>` with `opencode`,
 
 ```bash
 git merge <runtime>/TASK-N
-git worktree remove .opencode/worktrees/TASK-N
+git worktree remove .delegate/worktrees/TASK-N
 git branch -d <runtime>/TASK-N
 ```
 
@@ -96,4 +96,4 @@ The skill monitors the agent and recovers automatically:
 | Verification fails after output is produced | Retries with `--continue` and notes what failed |
 | All retries exhausted | Marks `failed`, reports log tail to you |
 
-Retry count is tracked in `TODO.md` (`retries:` field) and in `.opencode/tasks/TASK-N.retries`.
+Retry count is tracked in `TODO.md` (`retries:` field) and in `.delegate/tasks/TASK-N.retries`.

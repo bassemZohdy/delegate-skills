@@ -46,8 +46,8 @@ create_handoff() {
   local task_id="$2"
   local content="${3:-This is a test handoff document for $task_id.}"
 
-  mkdir -p "$sandbox/.opencode/tasks"
-  cat > "$sandbox/.opencode/tasks/$task_id.md" <<EOF
+  mkdir -p "$sandbox/.delegate/tasks"
+  cat > "$sandbox/.delegate/tasks/$task_id.md" <<EOF
 # Handoff: $task_id
 
 $content
@@ -79,7 +79,7 @@ init_git_repo() {
 snapshot_watchdog_children() {
   local sandbox="$1"
   local f pid child
-  for f in "$sandbox"/.opencode/tasks/*.watchdog.pid; do
+  for f in "$sandbox"/.delegate/tasks/*.watchdog.pid; do
     [ -f "$f" ] || continue
     pid=$(cat "$f" 2>/dev/null)
     [ -n "$pid" ] || continue
@@ -102,11 +102,11 @@ cleanup_sandbox() {
   # anywhere else on the system. Do NOT match on command text like "sleep 30"
   # globally — that would kill unrelated processes on the host that happen to
   # share the same duration.
-  if [ -d "$sandbox/.opencode/tasks" ]; then
+  if [ -d "$sandbox/.delegate/tasks" ]; then
     local f pid child
 
     # Kill all task processes (these are the actual agent CLIs being run)
-    for f in "$sandbox"/.opencode/tasks/*.pid; do
+    for f in "$sandbox"/.delegate/tasks/*.pid; do
       [ -f "$f" ] || continue
       pid=$(cat "$f" 2>/dev/null)
       [ -n "$pid" ] && kill -KILL "$pid" 2>/dev/null || true
@@ -117,7 +117,7 @@ cleanup_sandbox() {
     # best-effort second attempt — by cleanup time the watchdog subshell may
     # already be gone (see snapshot_watchdog_children, called right after launch,
     # which is the primary mechanism since it runs before that race window).
-    for f in "$sandbox"/.opencode/tasks/*.watchdog.pid; do
+    for f in "$sandbox"/.delegate/tasks/*.watchdog.pid; do
       [ -f "$f" ] || continue
       pid=$(cat "$f" 2>/dev/null)
       [ -z "$pid" ] && continue
@@ -131,7 +131,7 @@ cleanup_sandbox() {
     # snapshot_watchdog_children) — this is the reliable path, since it
     # captures the watchdog's sleep child before it can be reparented away
     # from a live pgrep -P lookup done later, at cleanup time.
-    for f in "$sandbox"/.opencode/tasks/*.watchdog.pid.children; do
+    for f in "$sandbox"/.delegate/tasks/*.watchdog.pid.children; do
       [ -f "$f" ] || continue
       while IFS= read -r child; do
         [ -n "$child" ] && kill -KILL "$child" 2>/dev/null || true
@@ -248,22 +248,22 @@ test_opencode_happy() {
   grep -q "^WORK_DIR=" "$tempfile" || return 1
 
   # Check git worktree was created
-  [ -d "$SANDBOX/.opencode/worktrees/TASK-4" ] || return 1
+  [ -d "$SANDBOX/.delegate/worktrees/TASK-4" ] || return 1
   git -C "$SANDBOX" branch --list "opencode/TASK-4" | grep -q "opencode/TASK-4" || return 1
 
   # Check retries file
-  [ -f "$SANDBOX/.opencode/tasks/TASK-4.retries" ] || return 1
-  [ "$(cat "$SANDBOX/.opencode/tasks/TASK-4.retries")" = "0" ] || return 1
+  [ -f "$SANDBOX/.delegate/tasks/TASK-4.retries" ] || return 1
+  [ "$(cat "$SANDBOX/.delegate/tasks/TASK-4.retries")" = "0" ] || return 1
 
   # Check watchdog PID file exists
-  [ -f "$SANDBOX/.opencode/tasks/TASK-4.watchdog.pid" ] || return 1
+  [ -f "$SANDBOX/.delegate/tasks/TASK-4.watchdog.pid" ] || return 1
 
   # Check mock output files
   wait_for_mock_file "$SANDBOX/mockout/opencode.args" || return 1
   grep -qF -- "--file" "$SANDBOX/mockout/opencode.args" || return 1
-  grep -qF -- "$SANDBOX/.opencode/tasks/TASK-4.md" "$SANDBOX/mockout/opencode.args" || return 1
+  grep -qF -- "$SANDBOX/.delegate/tasks/TASK-4.md" "$SANDBOX/mockout/opencode.args" || return 1
   grep -qF -- "--dir" "$SANDBOX/mockout/opencode.args" || return 1
-  grep -qF -- "$SANDBOX/.opencode/worktrees/TASK-4" "$SANDBOX/mockout/opencode.args" || return 1
+  grep -qF -- "$SANDBOX/.delegate/worktrees/TASK-4" "$SANDBOX/mockout/opencode.args" || return 1
   grep -qF -- "--auto" "$SANDBOX/mockout/opencode.args" || return 1
 
   # Confirm the log actually captured the mock's output once it finished.
@@ -272,13 +272,13 @@ test_opencode_happy() {
   # since there's a real (if small) gap between those two writes.
   local waited=0
   while [ "$waited" -lt 50 ]; do
-    if grep -q "Mock opencode completed successfully\|DONE" "$SANDBOX/.opencode/tasks/TASK-4.log" 2>/dev/null; then
+    if grep -q "Mock opencode completed successfully\|DONE" "$SANDBOX/.delegate/tasks/TASK-4.log" 2>/dev/null; then
       break
     fi
     sleep 0.1
     waited=$((waited + 1))
   done
-  grep -q "Mock opencode completed successfully\|DONE" "$SANDBOX/.opencode/tasks/TASK-4.log" || return 1
+  grep -q "Mock opencode completed successfully\|DONE" "$SANDBOX/.delegate/tasks/TASK-4.log" || return 1
 }
 
 # ─── Test 5: PID-capture regression test for pi ──────────────────────────
@@ -307,7 +307,7 @@ test_pi_pid_capture() {
 
   # Extract PID
   local task_pid
-  task_pid=$(cat "$SANDBOX/.opencode/tasks/TASK-5.pid" 2>/dev/null)
+  task_pid=$(cat "$SANDBOX/.delegate/tasks/TASK-5.pid" 2>/dev/null)
   [ -n "$task_pid" ] || return 1
 
   # Verify PID is alive
@@ -352,7 +352,7 @@ test_hermes_pid_capture() {
 
   # Extract PID
   local task_pid
-  task_pid=$(cat "$SANDBOX/.opencode/tasks/TASK-6.pid" 2>/dev/null)
+  task_pid=$(cat "$SANDBOX/.delegate/tasks/TASK-6.pid" 2>/dev/null)
   [ -n "$task_pid" ] || return 1
 
   # Verify alive
@@ -397,7 +397,7 @@ test_kimi_pid_capture() {
 
   # Extract PID
   local task_pid
-  task_pid=$(cat "$SANDBOX/.opencode/tasks/TASK-7.pid" 2>/dev/null)
+  task_pid=$(cat "$SANDBOX/.delegate/tasks/TASK-7.pid" 2>/dev/null)
   [ -n "$task_pid" ] || return 1
 
   # Verify alive
@@ -451,9 +451,9 @@ test_mimo_file_supported() {
   # Check .args
   wait_for_mock_file "$SANDBOX/mockout/mimo.args" || return 1
   grep -qF -- "--file" "$SANDBOX/mockout/mimo.args" || return 1
-  grep -qF -- "$SANDBOX/.opencode/tasks/TASK-8.md" "$SANDBOX/mockout/mimo.args" || return 1
+  grep -qF -- "$SANDBOX/.delegate/tasks/TASK-8.md" "$SANDBOX/mockout/mimo.args" || return 1
   grep -qF -- "--dir" "$SANDBOX/mockout/mimo.args" || return 1
-  grep -qF -- "$SANDBOX/.opencode/worktrees/TASK-8" "$SANDBOX/mockout/mimo.args" || return 1
+  grep -qF -- "$SANDBOX/.delegate/worktrees/TASK-8" "$SANDBOX/mockout/mimo.args" || return 1
 }
 
 # ─── Test 9: mimo — --file NOT supported, cd-fallback ──────────────────
@@ -486,7 +486,7 @@ test_mimo_file_not_supported() {
   # Check cwd is worktree
   local cwd
   cwd=$(cat "$SANDBOX/mockout/mimo.cwd" 2>/dev/null)
-  [ "$cwd" = "$SANDBOX/.opencode/worktrees/TASK-9" ] || return 1
+  [ "$cwd" = "$SANDBOX/.delegate/worktrees/TASK-9" ] || return 1
 
   # Check .args - --file must NOT be present
   wait_for_mock_file "$SANDBOX/mockout/mimo.args" || return 1
@@ -568,7 +568,7 @@ test_agy_add_dir() {
   # Check .args
   wait_for_mock_file "$SANDBOX/mockout/agy.args" || return 1
   grep -qF -- "--add-dir" "$SANDBOX/mockout/agy.args" || return 1
-  grep -qF -- "$SANDBOX/.opencode/worktrees/TASK-11" "$SANDBOX/mockout/agy.args" || return 1
+  grep -qF -- "$SANDBOX/.delegate/worktrees/TASK-11" "$SANDBOX/mockout/agy.args" || return 1
   grep -qF -- "--print" "$SANDBOX/mockout/agy.args" || return 1
 }
 
@@ -602,11 +602,11 @@ test_hermes_absolute_path() {
   # Check cwd is worktree
   local cwd
   cwd=$(cat "$SANDBOX/mockout/hermes.cwd" 2>/dev/null)
-  [ "$cwd" = "$SANDBOX/.opencode/worktrees/TASK-12" ] || return 1
+  [ "$cwd" = "$SANDBOX/.delegate/worktrees/TASK-12" ] || return 1
 
   # Check .args
   wait_for_mock_file "$SANDBOX/mockout/hermes.args" || return 1
-  grep -qF -- "$SANDBOX/.opencode/tasks/TASK-12.md" "$SANDBOX/mockout/hermes.args" || return 1
+  grep -qF -- "$SANDBOX/.delegate/tasks/TASK-12.md" "$SANDBOX/mockout/hermes.args" || return 1
 }
 
 # ─── Test 13: kimi — cd + absolute path ───────────────────────────
@@ -639,11 +639,11 @@ test_kimi_absolute_path() {
   # Check cwd is worktree
   local cwd
   cwd=$(cat "$SANDBOX/mockout/kimi.cwd" 2>/dev/null)
-  [ "$cwd" = "$SANDBOX/.opencode/worktrees/TASK-13" ] || return 1
+  [ "$cwd" = "$SANDBOX/.delegate/worktrees/TASK-13" ] || return 1
 
   # Check .args
   wait_for_mock_file "$SANDBOX/mockout/kimi.args" || return 1
-  grep -qF -- "$SANDBOX/.opencode/tasks/TASK-13.md" "$SANDBOX/mockout/kimi.args" || return 1
+  grep -qF -- "$SANDBOX/.delegate/tasks/TASK-13.md" "$SANDBOX/mockout/kimi.args" || return 1
 }
 
 # ─── Test 14: Not a git repo ───────────────────────────────────────────
@@ -654,7 +654,7 @@ test_not_git_repo() {
   trap "cleanup_sandbox '$SANDBOX'" RETURN
 
   # Setup (no git init)
-  mkdir -p "$SANDBOX/bin" "$SANDBOX/.opencode/tasks"
+  mkdir -p "$SANDBOX/bin" "$SANDBOX/.delegate/tasks"
   create_handoff "$SANDBOX" "TASK-14"
   cp "$FIXTURES/opencode" "$SANDBOX/bin/"
   chmod +x "$SANDBOX/bin/opencode"
@@ -672,7 +672,7 @@ test_not_git_repo() {
   grep -q "not a git repo" "$tempfile" || return 1
 
   # Check worktree exists
-  [ -d "$SANDBOX/.opencode/worktrees/TASK-14" ] || return 1
+  [ -d "$SANDBOX/.delegate/worktrees/TASK-14" ] || return 1
 }
 
 # ─── Test 15: Worktree reuse ──────────────────────────────────────────

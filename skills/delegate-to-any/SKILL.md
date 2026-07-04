@@ -5,7 +5,7 @@ license: MIT
 compatibility: "Requires git, bash, and at least one of: oh-my-opencode, opencode, pi, mimo, hermes, kimi, codex, or agy on PATH."
 metadata:
   author: Bassem Zohdy
-  version: 1.2.2
+  version: 1.2.3
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -109,9 +109,9 @@ Every per-runtime launch block shares the same mechanical skeleton (shown once h
 ```bash
 # Common skeleton — the runtime-specific nohup line comes from the per-runtime skill.
 PROJECT_ROOT="$(pwd)"                       # capture BEFORE any cd (pi/hermes/kimi/agy cd into the worktree)
-WORK_DIR="$PROJECT_ROOT/.opencode/worktrees/TASK-N"
+WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
 [ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
-mkdir -p "$PROJECT_ROOT/.opencode/tasks"    # ensure PID/log/retries files can be written
+mkdir -p "$PROJECT_ROOT/.delegate/tasks"    # ensure PID/log/retries files can be written
 TIMEOUT_SECS=<seconds from timeout tier>
 
 # >>> Insert the chosen runtime's nohup launch line here (from delegate-to-<runtime>/SKILL.md).
@@ -119,17 +119,17 @@ TIMEOUT_SECS=<seconds from timeout tier>
 # >>> Use $PROJECT_ROOT-absolute paths for --file — --dir changes the runtime's cwd
 # >>> to the worktree, so a relative --file path silently fails to resolve.
 # >>> e.g. opencode:
-# nohup opencode run "..." --file "$PROJECT_ROOT/.opencode/tasks/TASK-N.md" --dir "$WORK_DIR" \
-#   $OPENCODE_AUTO_FLAG > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+# nohup opencode run "..." --file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md" --dir "$WORK_DIR" \
+#   $OPENCODE_AUTO_FLAG > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 
 TASK_PID=$!
-echo $TASK_PID > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
-echo 0 > "$PROJECT_ROOT/.opencode/tasks/TASK-N.retries"
+echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
+echo 0 > "$PROJECT_ROOT/.delegate/tasks/TASK-N.retries"
 
 # Watchdog: SIGTERM after timeout, SIGKILL after 30s grace
 (sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
   && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.watchdog.pid"
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```
 
 Use the runtime label in TODO.md and on the worktree branch name: `omo` for oh-my-opencode, otherwise the binary name (`opencode`, `pi`, `mimo`, `hermes`, `kimi`, `codex`, `agy`).

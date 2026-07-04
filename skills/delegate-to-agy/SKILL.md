@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and agy on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.2.1
+  version: 1.2.3
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -53,26 +53,26 @@ agy --help 2>&1 | grep -E "print|continue|skip-permissions|add-dir"
 
 ```bash
 PROJECT_ROOT="$(pwd)"
-WORK_DIR="$PROJECT_ROOT/.opencode/worktrees/TASK-N"
+WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
 [ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
 
-TASK_FILE="$PROJECT_ROOT/.opencode/tasks/TASK-N.md"
+TASK_FILE="$PROJECT_ROOT/.delegate/tasks/TASK-N.md"
 TIMEOUT_SECS=<seconds from timeout tier>
 
 nohup agy \
   --print "Read $TASK_FILE and execute the task described in it. All file changes must be made inside $WORK_DIR. Follow all instructions exactly." \
   --add-dir "$WORK_DIR" \
   --dangerously-skip-permissions \
-  > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+  > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 
 TASK_PID=$!
-echo $TASK_PID > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
-echo 0 > "$PROJECT_ROOT/.opencode/tasks/TASK-N.retries"
+echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
+echo 0 > "$PROJECT_ROOT/.delegate/tasks/TASK-N.retries"
 
 # Watchdog: SIGTERM after timeout, SIGKILL after 30s grace
 (sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
   && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.watchdog.pid"
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```
 
 **`none` — abort:**
@@ -96,5 +96,5 @@ nohup agy \
   --print "Continue the task from where you left off. Task file: $TASK_FILE" \
   --add-dir "$WORK_DIR" \
   --dangerously-skip-permissions \
-  > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+  > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 ```

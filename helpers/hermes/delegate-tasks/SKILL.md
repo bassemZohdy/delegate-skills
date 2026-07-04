@@ -72,7 +72,7 @@ Increment by 1. Use `TASK-<N>` (e.g. `TASK-1`) throughout. Checking `TODO-ARCHIV
 
 Append to `TODO.md` (create it if absent):
 ```
-terminal(command="cat >> TODO.md << 'ENTRY'\n\n## [TASK-<N>] <short title>\n- status: in_progress\n- owner: <runtime>/<timestamp>\n- agent: <runtime>\n- started: <ISO-8601>\n- timeout: <seconds>\n- worktree: .opencode/worktrees/TASK-<N>\n- branch: <runtime>/TASK-<N>\n- handoff: .opencode/tasks/TASK-<N>.md\n\n### Sub-tasks\n- [ ] <sub-task 1>\n\n### Verification\n<done criteria>\nENTRY", workdir="<project>")
+terminal(command="cat >> TODO.md << 'ENTRY'\n\n## [TASK-<N>] <short title>\n- status: in_progress\n- owner: <runtime>/<timestamp>\n- agent: <runtime>\n- started: <ISO-8601>\n- timeout: <seconds>\n- worktree: .delegate/worktrees/TASK-<N>\n- branch: <runtime>/TASK-<N>\n- handoff: .delegate/tasks/TASK-<N>.md\n\n### Sub-tasks\n- [ ] <sub-task 1>\n\n### Verification\n<done criteria>\nENTRY", workdir="<project>")
 ```
 
 Commit it now, before creating the worktree:
@@ -86,18 +86,18 @@ A worktree only sees *committed* history — creating it before this commit leav
 ### Step 3 — Create Git Worktree
 
 ```
-terminal(command="git worktree add .opencode/worktrees/TASK-<N> -b <runtime>/TASK-<N>", workdir="<project>")
+terminal(command="git worktree add .delegate/worktrees/TASK-<N> -b <runtime>/TASK-<N>", workdir="<project>")
 ```
 
 ---
 
 ### Step 4 — Write Handoff Document
 
-Create `.opencode/tasks/TASK-<N>.md`. The agent has no conversation history — write as a cold-start briefing (200–500 tokens):
+Create `.delegate/tasks/TASK-<N>.md`. The agent has no conversation history — write as a cold-start briefing (200–500 tokens):
 
 ```
-terminal(command="mkdir -p .opencode/tasks", workdir="<project>")
-terminal(command="cat > .opencode/tasks/TASK-<N>.md << 'HANDOFF'\n# Task Handoff — TASK-<N>\n\n## Task Description\n<what to accomplish>\n\n## Target Paths\n<files and directories>\n\n## Worktree Path\n.opencode/worktrees/TASK-<N>\n\n## Sub-tasks\n- [ ] <sub-task>\n\n## Verification Expectations\n<commands to run, files to verify>\n\n## Git State\n- base_branch: <branch>\n- base_sha: <sha>\n- agent_branch: <runtime>/TASK-<N>\nHANDOFF", workdir="<project>")
+terminal(command="mkdir -p .delegate/tasks", workdir="<project>")
+terminal(command="cat > .delegate/tasks/TASK-<N>.md << 'HANDOFF'\n# Task Handoff — TASK-<N>\n\n## Task Description\n<what to accomplish>\n\n## Target Paths\n<files and directories>\n\n## Worktree Path\n.delegate/worktrees/TASK-<N>\n\n## Sub-tasks\n- [ ] <sub-task>\n\n## Verification Expectations\n<commands to run, files to verify>\n\n## Git State\n- base_branch: <branch>\n- base_sha: <sha>\n- agent_branch: <runtime>/TASK-<N>\nHANDOFF", workdir="<project>")
 ```
 
 ---
@@ -118,41 +118,41 @@ If `scripts/delegate.sh` is not present in the project, launch directly. See CLI
 
 **opencode:**
 ```
-terminal(command="PROJECT_ROOT=$(pwd) && OPENCODE_AUTO=$(opencode run --help 2>&1 | grep -qo -- '--auto' && echo --auto || (opencode run --help 2>&1 | grep -qo -- '--dangerously-skip-permissions' && echo --dangerously-skip-permissions)) && nohup opencode run 'Execute handoff.' --file \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.md\" --dir \"$PROJECT_ROOT/.opencode/worktrees/TASK-<N>\" $OPENCODE_AUTO > \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
+terminal(command="PROJECT_ROOT=$(pwd) && OPENCODE_AUTO=$(opencode run --help 2>&1 | grep -qo -- '--auto' && echo --auto || (opencode run --help 2>&1 | grep -qo -- '--dangerously-skip-permissions' && echo --dangerously-skip-permissions)) && nohup opencode run 'Execute handoff.' --file \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.md\" --dir \"$PROJECT_ROOT/.delegate/worktrees/TASK-<N>\" $OPENCODE_AUTO > \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
 ```
 `--dir` points opencode's cwd at the worktree, so `--file` must be an absolute path — a relative one silently fails to resolve. The auto-approval flag name varies by version (`--auto` replaced `--dangerously-skip-permissions` as of opencode v1.17.x) — detect it rather than hardcoding.
 
 **pi:**
 ```
-terminal(command="PROJECT_ROOT=$(pwd) && cd .opencode/worktrees/TASK-<N> && nohup pi -p '@'\"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.md\" 'Execute handoff.' --approve > \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
+terminal(command="PROJECT_ROOT=$(pwd) && cd .delegate/worktrees/TASK-<N> && nohup pi -p '@'\"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.md\" 'Execute handoff.' --approve > \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
 ```
 
 **hermes (self-delegate):**
 ```
-terminal(command="PROJECT_ROOT=$(pwd) && cd .opencode/worktrees/TASK-<N> && nohup hermes chat -q 'Read '\"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.md\"' and execute.' --yolo --accept-hooks -Q > \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
+terminal(command="PROJECT_ROOT=$(pwd) && cd .delegate/worktrees/TASK-<N> && nohup hermes chat -q 'Read '\"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.md\"' and execute.' --yolo --accept-hooks -Q > \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
 ```
 
 **kimi:**
 ```
-terminal(command="PROJECT_ROOT=$(pwd) && cd .opencode/worktrees/TASK-<N> && nohup kimi -p 'Read '\"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.md\"' and execute.' -y > \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
+terminal(command="PROJECT_ROOT=$(pwd) && cd .delegate/worktrees/TASK-<N> && nohup kimi -p 'Read '\"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.md\"' and execute.' -y > \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
 ```
 
 **codex:**
 ```
-terminal(command="export _F=$(pwd)/.opencode/tasks/TASK-<N>.md _D=$(pwd)/.opencode/worktrees/TASK-<N> && nohup bash -c '{ printf \"%s\\n\\n\" \"Execute the task described in the handoff document below. Follow all instructions in it exactly.\"; cat \"$_F\"; } | codex exec -C \"$_D\" -s danger-full-access --dangerously-bypass-approvals-and-sandbox -' > $(pwd)/.opencode/tasks/TASK-<N>.log 2>&1 & echo $!", workdir="<project>")
+terminal(command="export _F=$(pwd)/.delegate/tasks/TASK-<N>.md _D=$(pwd)/.delegate/worktrees/TASK-<N> && nohup bash -c '{ printf \"%s\\n\\n\" \"Execute the task described in the handoff document below. Follow all instructions in it exactly.\"; cat \"$_F\"; } | codex exec -C \"$_D\" -s danger-full-access --dangerously-bypass-approvals-and-sandbox -' > $(pwd)/.delegate/tasks/TASK-<N>.log 2>&1 & echo $!", workdir="<project>")
 ```
 
 The `printf` framing is mandatory — piping the raw handoff risks Codex treating it as content to discuss rather than a task to execute.
 
 **mimo:**
 ```
-terminal(command="PROJECT_ROOT=$(pwd) && nohup mimo run 'Execute handoff.' --file \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.md\" --dir \"$PROJECT_ROOT/.opencode/worktrees/TASK-<N>\" --dangerously-skip-permissions > \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
+terminal(command="PROJECT_ROOT=$(pwd) && nohup mimo run 'Execute handoff.' --file \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.md\" --dir \"$PROJECT_ROOT/.delegate/worktrees/TASK-<N>\" --dangerously-skip-permissions > \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
 ```
 Same absolute-path requirement as opencode above — `--dir` changes mimo's cwd, so `--file` must be absolute.
 
 **agy:**
 ```
-terminal(command="nohup agy --print 'Read $(pwd)/.opencode/tasks/TASK-<N>.md and execute.' --add-dir .opencode/worktrees/TASK-<N> --dangerously-skip-permissions > .opencode/tasks/TASK-<N>.log 2>&1 & echo $!", workdir="<project>")
+terminal(command="nohup agy --print 'Read $(pwd)/.delegate/tasks/TASK-<N>.md and execute.' --add-dir .delegate/worktrees/TASK-<N> --dangerously-skip-permissions > .delegate/tasks/TASK-<N>.log 2>&1 & echo $!", workdir="<project>")
 ```
 
 Set a watchdog after any direct launch:
@@ -175,17 +175,17 @@ terminal(command="kill -0 <PID> 2>/dev/null && echo running || echo done", workd
 
 **Check log for progress:**
 ```
-terminal(command="tail -30 .opencode/tasks/TASK-<N>.log", workdir="<project>")
+terminal(command="tail -30 .delegate/tasks/TASK-<N>.log", workdir="<project>")
 ```
 
 **Stall detection** — compare log size between polls:
 ```
-terminal(command="wc -c < .opencode/tasks/TASK-<N>.log", workdir="<project>")
+terminal(command="wc -c < .delegate/tasks/TASK-<N>.log", workdir="<project>")
 ```
 
 If the log stops growing, the agent stalled. Kill and retry with `--continue` (reuse `$PROJECT_ROOT` and `$OPENCODE_AUTO` from the initial launch):
 ```
-terminal(command="kill <PID> && nohup opencode run 'Continue from where you left off.' --file \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.md\" --dir \"$PROJECT_ROOT/.opencode/worktrees/TASK-<N>\" --continue $OPENCODE_AUTO > \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
+terminal(command="kill <PID> && nohup opencode run 'Continue from where you left off.' --file \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.md\" --dir \"$PROJECT_ROOT/.delegate/worktrees/TASK-<N>\" --continue $OPENCODE_AUTO > \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
 ```
 
 **On completion** — update TODO.md, commit it, and report to user:
@@ -194,7 +194,7 @@ terminal(command="sed -i 's/status: in_progress/status: completed/' TODO.md && g
 ```
 Committing keeps the main tree clean before the next delegation. Merging the worktree's actual code changes into the current branch is a separate, deliberate step — report the merge command to the user rather than running it automatically, since it changes their current branch:
 ```
-terminal(command="git merge <runtime>/TASK-<N> && git worktree remove .opencode/worktrees/TASK-<N> && git branch -d <runtime>/TASK-<N>", workdir="<project>")
+terminal(command="git merge <runtime>/TASK-<N> && git worktree remove .delegate/worktrees/TASK-<N> && git branch -d <runtime>/TASK-<N>", workdir="<project>")
 ```
 
 ---
@@ -209,7 +209,7 @@ terminal(command="git merge <runtime>/TASK-<N> && git worktree remove .opencode/
 | Verification fails after output | Retry with `--continue` + notes on what failed |
 | All retries exhausted | Mark `failed`, report log tail to user |
 
-Retry counter: track in `.opencode/tasks/TASK-<N>.retries` file and in the `retries:` field in TODO.md.
+Retry counter: track in `.delegate/tasks/TASK-<N>.retries` file and in the `retries:` field in TODO.md.
 
 ---
 

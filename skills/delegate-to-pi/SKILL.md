@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and pi on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.2.1
+  version: 1.2.3
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -55,29 +55,29 @@ pi --help 2>&1 | grep -E "variant|thinking"
 
 **Critical: use `@` file references for the handoff document.** Pi reads file contents from `@path` positional arguments — never expand the handoff markdown into a shell variable.
 
-**Note:** Pi has no `--dir` flag — `cd` into the worktree before launching. Capture `PROJECT_ROOT` *before* the `cd` so all `.opencode/tasks/` paths stay absolute and resolve correctly from the project root, not from inside the worktree.
+**Note:** Pi has no `--dir` flag — `cd` into the worktree before launching. Capture `PROJECT_ROOT` *before* the `cd` so all `.delegate/tasks/` paths stay absolute and resolve correctly from the project root, not from inside the worktree.
 
 ```bash
 PROJECT_ROOT="$(pwd)"
-WORK_DIR="$PROJECT_ROOT/.opencode/worktrees/TASK-N"
+WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
 [ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
 
 TIMEOUT_SECS=<seconds from timeout tier>
 
 cd "$WORK_DIR" && nohup pi -p \
-  "@$PROJECT_ROOT/.opencode/tasks/TASK-N.md" \
+  "@$PROJECT_ROOT/.delegate/tasks/TASK-N.md" \
   "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
   --approve \
-  > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+  > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 
 TASK_PID=$!
-echo $TASK_PID > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
-echo 0 > "$PROJECT_ROOT/.opencode/tasks/TASK-N.retries"
+echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
+echo 0 > "$PROJECT_ROOT/.delegate/tasks/TASK-N.retries"
 
 # Watchdog: SIGTERM after timeout, SIGKILL after 30s grace
 (sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
   && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.watchdog.pid"
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```
 
 **`none` — abort:**
@@ -97,8 +97,8 @@ Tell the user: task ID, working directory, timeout deadline.
 When self-healing retries with `--continue` (PROJECT_ROOT and WORK_DIR already set from initial launch):
 ```bash
 cd "$WORK_DIR" && nohup pi -p \
-  "@$PROJECT_ROOT/.opencode/tasks/TASK-N.md" \
+  "@$PROJECT_ROOT/.delegate/tasks/TASK-N.md" \
   "Continue the task from where you left off." \
   --approve --continue \
-  > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+  > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 ```

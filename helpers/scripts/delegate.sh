@@ -22,7 +22,7 @@
 #   timeout-seconds — seconds before the watchdog kills the agent (default: 1800)
 #
 # The handoff document must already exist at:
-#   .opencode/tasks/<task-id>.md
+#   .delegate/tasks/<task-id>.md
 #
 # Output (printed to stdout, one per line):
 #   PID=<agent process ID>
@@ -40,9 +40,9 @@ TASK_ID="${2:?Usage: delegate.sh <runtime> <task-id> [timeout-secs]}"
 TIMEOUT_SECS="${3:-1800}"
 
 PROJECT_ROOT="$(pwd)"
-TASKS_DIR="$PROJECT_ROOT/.opencode/tasks"
+TASKS_DIR="$PROJECT_ROOT/.delegate/tasks"
 TASK_FILE="$TASKS_DIR/$TASK_ID.md"
-WORK_DIR="$PROJECT_ROOT/.opencode/worktrees/$TASK_ID"
+WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/$TASK_ID"
 LOG_FILE="$TASKS_DIR/$TASK_ID.log"
 PID_FILE="$TASKS_DIR/$TASK_ID.pid"
 WATCHDOG_FILE="$TASKS_DIR/$TASK_ID.watchdog.pid"

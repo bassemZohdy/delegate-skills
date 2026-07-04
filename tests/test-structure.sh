@@ -374,7 +374,7 @@ yaml.safe_load(parts[1])
       grep -q -- "--approve" "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md uses --approve" \
         || fail "skills/$skill/SKILL.md missing --approve flag"
-      grep -qE '@\$PROJECT_ROOT|@.*\.opencode' "$SKILL_FILE" \
+      grep -qE '@\$PROJECT_ROOT|@.*\.delegate' "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md delivers handoff via @ file reference" \
         || fail "skills/$skill/SKILL.md missing @ file reference"
       grep -qE 'PROJECT_ROOT.*=.*\$\(pwd\)|PROJECT_ROOT="\$\(pwd\)"' "$SKILL_FILE" \

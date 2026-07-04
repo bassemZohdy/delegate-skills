@@ -196,7 +196,7 @@ For tools without a skill system (GitHub Copilot, Zed AI, Continue.dev, any chat
 ```bash
 bash /path/to/delegate-skills/helpers/scripts/delegate.sh <runtime> TASK-N [timeout-seconds]
 ```
-after writing the handoff document to `.opencode/tasks/TASK-N.md`.
+after writing the handoff document to `.delegate/tasks/TASK-N.md`.
 
 **Option 3 — Use Claude Code CLI alongside:** Open a terminal in your editor, run `claude`, and invoke `/delegate-to-<runtime>`. Works in Zed, Vim, Emacs, or any editor with a terminal pane.
 

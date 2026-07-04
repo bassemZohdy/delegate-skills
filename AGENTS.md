@@ -72,7 +72,7 @@ tests/
 Two-layer approach: structure tests grep-match frontmatter and text patterns (420 assertions); behavior tests actually *execute* `delegate.sh` against mocks in isolated sandboxes (16 test cases verifying real process/filesystem state).
 
 Other top-level files:
-- `.opencode/` — runtime artifacts (task logs, PID files, worktrees). **Do not edit by hand.**
+- `.delegate/` — runtime artifacts (task logs, PID files, worktrees). **Do not edit by hand.**
 - `TODO.md` — shared task ledger. Append-only; never delete or rewrite existing `## [TASK-N]` blocks.
 
 ## Key conventions
@@ -80,10 +80,10 @@ Other top-level files:
 - Step order is a strict contract — Steps 0–5 must run in sequence. Skipping a step breaks cross-agent coordination.
 - `TODO.md` `owner` field prevents double-pickup. Set on start, clear on completion/failure.
 - A task is `completed` only after verification expectations pass, not when the process exits.
-- Handoff documents (`.opencode/tasks/TASK-N.md`) are the agent's only context — write them as cold-start briefings, 200–500 tokens.
+- Handoff documents (`.delegate/tasks/TASK-N.md`) are the agent's only context — write them as cold-start briefings, 200–500 tokens.
 - **Never expand the handoff markdown into a shell variable** — special characters break cross-platform argument parsing. Use `--file` (opencode), `@path` (pi), stdin via `-` (codex), or absolute path reference in the prompt (hermes, kimi, agy).
 - The `active_form` field in TODO.md is critical — it tells reviewing agents what mid-task progress looks like.
-- For tools with no `--dir` flag (pi, hermes, kimi), capture `PROJECT_ROOT="$(pwd)"` **before** `cd`ing into the worktree so all `.opencode/tasks/*` paths stay correct.
+- For tools with no `--dir` flag (pi, hermes, kimi), capture `PROJECT_ROOT="$(pwd)"` **before** `cd`ing into the worktree so all `.delegate/tasks/*` paths stay correct.
 - All skills reference the shared workflow via `../shared/workflow.md` (one level up from the skill directory, inside `skills/`).
 
 ## CLI differences that matter
@@ -107,7 +107,7 @@ bash tests/run-tests.sh   # no external dependencies
 ## Known gotchas
 
 - **opencode v0.15+**: known hang where the process doesn't exit after completing. The watchdog (SIGTERM + 30s SIGKILL) handles this.
-- **pi path corruption**: `cd` changes the shell's cwd. Capture `PROJECT_ROOT="$(pwd)"` before `cd`ing and use absolute paths for all `.opencode/tasks/*` references.
+- **pi path corruption**: `cd` changes the shell's cwd. Capture `PROJECT_ROOT="$(pwd)"` before `cd`ing and use absolute paths for all `.delegate/tasks/*` references.
 - **hermes/kimi/agy — same cd issue**: same fix as pi. All three have no `--dir` flag.
 - **mimo flags**: `--dangerously-skip-permissions`, `--dir`, and `--file` are checked at runtime via `mimo run --help`. Only flags confirmed present are used.
 - **codex stdin**: uses `nohup bash -c '{ printf ...; cat "$_CODEX_TASK_FILE"; } | codex exec ... -'` via exported env vars to avoid quoting issues with paths containing spaces. The framing `printf` is mandatory — piping the raw handoff risks Codex treating it as content to discuss rather than a task to execute.
@@ -117,4 +117,4 @@ bash tests/run-tests.sh   # no external dependencies
 - **Windows PATH**: after `npm install -g`, restart your terminal so the new binary is on the shell PATH that Claude Code uses.
 - **TODO.md has no lock**: two concurrent delegations can read the same `grep -c '^## [TASK-'` count and collide on the same `TASK-N`. Assign task IDs sequentially *before* launching in parallel, or serialize the pick-and-append step (e.g. `flock TODO.md`).
 - **watchdog must be cancelled on completion**: the Step 4 watchdog subshell sleeps until timeout and will fire even after success, risking PID reuse. The shared workflow's Case 4 (and the terminal-failure branches) cancel it — don't skip that step.
-- **`.opencode/tasks/` must exist before launch**: Step 3 creates it (`mkdir -p .opencode/tasks .opencode/worktrees`). The Step 4 launch blocks write PID/log/retries files into it and rely on this; skip Step 3 and a first-ever delegation fails on the PID write.
+- **`.delegate/tasks/` must exist before launch**: Step 3 creates it (`mkdir -p .delegate/tasks .delegate/worktrees`). The Step 4 launch blocks write PID/log/retries files into it and rely on this; skip Step 3 and a first-ever delegation fails on the PID write.

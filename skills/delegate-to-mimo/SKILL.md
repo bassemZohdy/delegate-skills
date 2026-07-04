@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and mimo on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.2.1
+  version: 1.2.3
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -66,9 +66,9 @@ Build the launch command from only the flags that are confirmed present. If `--f
 ```bash
 # Capture PROJECT_ROOT first — --dir points mimo's cwd at the worktree, so any
 # relative path (e.g. --file) would otherwise resolve inside the worktree instead
-# of the project root, where .opencode/tasks/ actually lives.
+# of the project root, where .delegate/tasks/ actually lives.
 PROJECT_ROOT="$(pwd)"
-WORK_DIR="$PROJECT_ROOT/.opencode/worktrees/TASK-N"
+WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
 [ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
 
 TIMEOUT_SECS=<seconds from timeout tier>
@@ -81,23 +81,23 @@ MIMO_SKIP_FLAG=""
 [ "$MIMO_HAS_SKIP" -gt 0 ] && MIMO_SKIP_FLAG="--dangerously-skip-permissions"
 
 MIMO_FILE_FLAG=""
-[ "$MIMO_HAS_FILE" -gt 0 ] && MIMO_FILE_FLAG="--file $PROJECT_ROOT/.opencode/tasks/TASK-N.md"
+[ "$MIMO_HAS_FILE" -gt 0 ] && MIMO_FILE_FLAG="--file $PROJECT_ROOT/.delegate/tasks/TASK-N.md"
 
 nohup mimo run \
   "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
   $MIMO_FILE_FLAG \
   $MIMO_DIR_FLAG \
   $MIMO_SKIP_FLAG \
-  > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+  > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 
 TASK_PID=$!
-echo $TASK_PID > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
-echo 0 > "$PROJECT_ROOT/.opencode/tasks/TASK-N.retries"
+echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
+echo 0 > "$PROJECT_ROOT/.delegate/tasks/TASK-N.retries"
 
 # Watchdog: SIGTERM after timeout, SIGKILL after 30s grace
 (sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
   && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.watchdog.pid"
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```
 
 **`none` — abort:**
@@ -122,5 +122,5 @@ nohup mimo run \
   $MIMO_DIR_FLAG \
   --continue \
   $MIMO_SKIP_FLAG \
-  > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+  > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 ```

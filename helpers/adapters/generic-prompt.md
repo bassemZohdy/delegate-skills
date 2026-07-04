@@ -39,9 +39,9 @@ Append to TODO.md (create if absent):
 - agent: <runtime>
 - started: <ISO-8601>
 - timeout: <seconds>
-- worktree: .opencode/worktrees/TASK-N
+- worktree: .delegate/worktrees/TASK-N
 - branch: <runtime>/TASK-N
-- handoff: .opencode/tasks/TASK-N.md
+- handoff: .delegate/tasks/TASK-N.md
 
 ### Sub-tasks
 - [ ] <sub-task 1>
@@ -53,10 +53,10 @@ Append to TODO.md (create if absent):
 Commit it now, before creating the worktree: `git add TODO.md && git commit -m "TASK-N: add ledger entry"`. A worktree only sees *committed* history — creating it before this commit would leave the worktree with no trace of the task that owns it, and leave TODO.md dirty in the main tree, tripping Step 0's clean-tree check on the next delegation.
 
 ### Step 3 — Create Worktree
-Run: `git worktree add .opencode/worktrees/TASK-N -b <runtime>/TASK-N`
+Run: `git worktree add .delegate/worktrees/TASK-N -b <runtime>/TASK-N`
 
 ### Step 4 — Write Handoff Document
-Create `.opencode/tasks/TASK-N.md` (agent's only context — 200–500 tokens):
+Create `.delegate/tasks/TASK-N.md` (agent's only context — 200–500 tokens):
 
 ```
 # Task Handoff — TASK-N
@@ -68,7 +68,7 @@ Create `.opencode/tasks/TASK-N.md` (agent's only context — 200–500 tokens):
 <all files and directories involved>
 
 ## Worktree Path
-.opencode/worktrees/TASK-N
+.delegate/worktrees/TASK-N
 
 ## Sub-tasks
 - [ ] <sub-task 1>
@@ -99,24 +99,24 @@ PROJECT_ROOT="$(pwd)"
 OPENCODE_AUTO=""
 opencode run --help 2>&1 | grep -q -- "--auto" && OPENCODE_AUTO="--auto"
 opencode run --help 2>&1 | grep -q -- "--dangerously-skip-permissions" && OPENCODE_AUTO="--dangerously-skip-permissions"
-nohup opencode run "Execute handoff." --file "$PROJECT_ROOT/.opencode/tasks/TASK-N.md" --dir "$PROJECT_ROOT/.opencode/worktrees/TASK-N" $OPENCODE_AUTO > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
-echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
+nohup opencode run "Execute handoff." --file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md" --dir "$PROJECT_ROOT/.delegate/worktrees/TASK-N" $OPENCODE_AUTO > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
 ```
 
 **pi:**
 ```
 PROJECT_ROOT="$(pwd)"
-cd .opencode/worktrees/TASK-N
-nohup pi -p "@$PROJECT_ROOT/.opencode/tasks/TASK-N.md" "Execute handoff." --approve > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
-echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
+cd .delegate/worktrees/TASK-N
+nohup pi -p "@$PROJECT_ROOT/.delegate/tasks/TASK-N.md" "Execute handoff." --approve > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
 ```
 
 **codex:**
 ```
-export _CODEX_TASK_FILE="$(pwd)/.opencode/tasks/TASK-N.md"
-export _CODEX_WORK_DIR="$(pwd)/.opencode/worktrees/TASK-N"
-nohup bash -c '{ printf "%s\n\n" "Execute the task described in the handoff document below. Follow all instructions in it exactly."; cat "$_CODEX_TASK_FILE"; } | codex exec -C "$_CODEX_WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox -' > .opencode/tasks/TASK-N.log 2>&1 &
-echo $! > .opencode/tasks/TASK-N.pid
+export _CODEX_TASK_FILE="$(pwd)/.delegate/tasks/TASK-N.md"
+export _CODEX_WORK_DIR="$(pwd)/.delegate/worktrees/TASK-N"
+nohup bash -c '{ printf "%s\n\n" "Execute the task described in the handoff document below. Follow all instructions in it exactly."; cat "$_CODEX_TASK_FILE"; } | codex exec -C "$_CODEX_WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox -' > .delegate/tasks/TASK-N.log 2>&1 &
+echo $! > .delegate/tasks/TASK-N.pid
 ```
 
 > The `printf` framing is mandatory — piping the raw handoff risks Codex treating it as content to discuss rather than a task to execute.
@@ -124,29 +124,29 @@ echo $! > .opencode/tasks/TASK-N.pid
 **hermes:**
 ```
 PROJECT_ROOT="$(pwd)"
-cd .opencode/worktrees/TASK-N
-nohup hermes chat -q "Read $PROJECT_ROOT/.opencode/tasks/TASK-N.md and execute the task." --yolo --accept-hooks -Q > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
-echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
+cd .delegate/worktrees/TASK-N
+nohup hermes chat -q "Read $PROJECT_ROOT/.delegate/tasks/TASK-N.md and execute the task." --yolo --accept-hooks -Q > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
 ```
 
 **kimi:**
 ```
 PROJECT_ROOT="$(pwd)"
-cd .opencode/worktrees/TASK-N
-nohup kimi -p "Read $PROJECT_ROOT/.opencode/tasks/TASK-N.md and execute the task." -y > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
-echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
+cd .delegate/worktrees/TASK-N
+nohup kimi -p "Read $PROJECT_ROOT/.delegate/tasks/TASK-N.md and execute the task." -y > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
 ```
 
 **agy:**
 ```
-nohup agy --print "Read $(pwd)/.opencode/tasks/TASK-N.md and execute." --add-dir .opencode/worktrees/TASK-N --dangerously-skip-permissions > .opencode/tasks/TASK-N.log 2>&1 &
-echo $! > .opencode/tasks/TASK-N.pid
+nohup agy --print "Read $(pwd)/.delegate/tasks/TASK-N.md and execute." --add-dir .delegate/worktrees/TASK-N --dangerously-skip-permissions > .delegate/tasks/TASK-N.log 2>&1 &
+echo $! > .delegate/tasks/TASK-N.pid
 ```
 
 Set watchdog (replace PID and TIMEOUT):
 ```
 (sleep <TIMEOUT> && kill -TERM <PID> 2>/dev/null && sleep 30 && kill -KILL <PID> 2>/dev/null) &
-echo $! > .opencode/tasks/TASK-N.watchdog.pid
+echo $! > .delegate/tasks/TASK-N.watchdog.pid
 ```
 
 Tell the user: task ID, runtime, log path, worktree, expected timeout.
@@ -155,9 +155,9 @@ Tell the user: task ID, runtime, log path, worktree, expected timeout.
 
 Poll every ~20% of the timeout interval.
 
-Check liveness: `kill -0 $(cat .opencode/tasks/TASK-N.pid) 2>/dev/null && echo running || echo done`
-Read log: `tail -30 .opencode/tasks/TASK-N.log`
-Check log size: `wc -c < .opencode/tasks/TASK-N.log`
+Check liveness: `kill -0 $(cat .delegate/tasks/TASK-N.pid) 2>/dev/null && echo running || echo done`
+Read log: `tail -30 .delegate/tasks/TASK-N.log`
+Check log size: `wc -c < .delegate/tasks/TASK-N.log`
 
 Self-heal rules:
 - If the process exits with a tiny log (< 500 bytes): read the error, fix the command, retry (max 2×)
@@ -177,7 +177,7 @@ When the agent finishes and verification passes:
 Merge command:
 ```
 git merge <runtime>/TASK-N
-git worktree remove .opencode/worktrees/TASK-N
+git worktree remove .delegate/worktrees/TASK-N
 git branch -d <runtime>/TASK-N
 ```
 ```
@@ -193,8 +193,8 @@ You are delegating a coding task. Follow the delegation protocol:
 1. Check git status. If dirty, ask the user.
 2. Find the next TASK-N from TODO.md (or start at TASK-1).
 3. Append the TODO.md entry and commit it: `git add TODO.md && git commit -m "TASK-N: add ledger entry"`.
-4. Create worktree: `git worktree add .opencode/worktrees/TASK-N -b <runtime>/TASK-N`
-5. Write .opencode/tasks/TASK-N.md as a 200-500 token cold-start briefing.
+4. Create worktree: `git worktree add .delegate/worktrees/TASK-N -b <runtime>/TASK-N`
+5. Write .delegate/tasks/TASK-N.md as a 200-500 token cold-start briefing.
 6. Launch: `bash scripts/delegate.sh <runtime> TASK-N 1800`
 7. Report the task ID, log path, and expected completion time.
 

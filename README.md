@@ -114,7 +114,7 @@ cp -r helpers/hermes/delegate-tasks ~/.hermes/skills/autonomous-ai-agents/
 
 Copy `helpers/adapters/generic-prompt.md` into your AI's system prompt or workspace instructions. It contains the full delegation protocol and all launch commands.
 
-Or call the launcher script directly — after writing a handoff doc to `.opencode/tasks/TASK-1.md`:
+Or call the launcher script directly — after writing a handoff doc to `.delegate/tasks/TASK-1.md`:
 
 ```bash
 bash helpers/scripts/delegate.sh opencode TASK-1 1800
@@ -126,17 +126,17 @@ bash helpers/scripts/delegate.sh opencode TASK-1 1800
 
 ### Worktree isolation
 
-Each task gets its own git branch (`<runtime>/TASK-N`) and a matching worktree at `.opencode/worktrees/TASK-N`. The agent writes only inside that worktree. When it finishes, you review and merge:
+Each task gets its own git branch (`<runtime>/TASK-N`) and a matching worktree at `.delegate/worktrees/TASK-N`. The agent writes only inside that worktree. When it finishes, you review and merge:
 
 ```bash
 git merge opencode/TASK-1
-git worktree remove .opencode/worktrees/TASK-1
+git worktree remove .delegate/worktrees/TASK-1
 git branch -d opencode/TASK-1
 ```
 
 ### Handoff documents
 
-`.opencode/tasks/TASK-N.md` is the agent's entire context — it has no conversation history. The skill writes a structured briefing (task description, target paths, architectural constraints, sub-tasks, verification criteria, git state) and passes it via the runtime's file delivery mechanism:
+`.delegate/tasks/TASK-N.md` is the agent's entire context — it has no conversation history. The skill writes a structured briefing (task description, target paths, architectural constraints, sub-tasks, verification criteria, git state) and passes it via the runtime's file delivery mechanism:
 
 | Runtime | Delivery method |
 |---------|----------------|

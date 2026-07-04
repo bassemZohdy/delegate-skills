@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and opencode or oh-my-opencode on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.2.1
+  version: 1.2.3
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -70,28 +70,28 @@ echo "$OPENCODE_HELP" | grep -q -- "--dangerously-skip-permissions" && OPENCODE_
 ```bash
 # Capture PROJECT_ROOT first — --dir points opencode's cwd at the worktree, so any
 # relative path (e.g. --file) would otherwise resolve inside the worktree instead
-# of the project root, where .opencode/tasks/ actually lives.
+# of the project root, where .delegate/tasks/ actually lives.
 PROJECT_ROOT="$(pwd)"
-WORK_DIR="$PROJECT_ROOT/.opencode/worktrees/TASK-N"
+WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
 [ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
 
 TIMEOUT_SECS=<seconds from timeout tier>
 
 nohup opencode run \
   "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
-  --file "$PROJECT_ROOT/.opencode/tasks/TASK-N.md" \
+  --file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md" \
   --dir "$WORK_DIR" \
   $OPENCODE_AUTO_FLAG \
-  > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+  > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 
 TASK_PID=$!
-echo $TASK_PID > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
-echo 0 > "$PROJECT_ROOT/.opencode/tasks/TASK-N.retries"
+echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
+echo 0 > "$PROJECT_ROOT/.delegate/tasks/TASK-N.retries"
 
 # Watchdog: SIGTERM after timeout, SIGKILL after 30s grace
 (sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
   && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.watchdog.pid"
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```
 
 **`omo` — oh-my-opencode:**
@@ -100,7 +100,7 @@ echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.watchdog.pid"
 # worktree or cd into it, so any relative path (e.g. --file) must be made absolute
 # against PROJECT_ROOT or it will fail to resolve once the cwd changes.
 PROJECT_ROOT="$(pwd)"
-WORK_DIR="$PROJECT_ROOT/.opencode/worktrees/TASK-N"
+WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
 [ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
 
 TIMEOUT_SECS=<seconds from timeout tier>
@@ -109,7 +109,7 @@ TIMEOUT_SECS=<seconds from timeout tier>
 # If --dir is unsupported, fall back to cd so the agent still runs in the worktree.
 OMO_HELP=$(oh-my-opencode run --help 2>&1)
 OMO_FILE_FLAG=""
-echo "$OMO_HELP" | grep -q "\-\-file" && OMO_FILE_FLAG="--file $PROJECT_ROOT/.opencode/tasks/TASK-N.md"
+echo "$OMO_HELP" | grep -q "\-\-file" && OMO_FILE_FLAG="--file $PROJECT_ROOT/.delegate/tasks/TASK-N.md"
 OMO_DIR_FLAG=""
 echo "$OMO_HELP" | grep -q "\-\-dir" && OMO_DIR_FLAG="--dir $WORK_DIR"
 
@@ -121,24 +121,24 @@ if [ -n "$OMO_DIR_FLAG" ]; then
     $OMO_FILE_FLAG \
     $OMO_DIR_FLAG \
     --yes \
-    > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+    > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 else
   # No --dir flag: cd into the worktree so isolation still holds.
   cd "$WORK_DIR" && nohup oh-my-opencode run \
     "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
     $OMO_FILE_FLAG \
     --yes \
-    > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+    > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 fi
 
 TASK_PID=$!
-echo $TASK_PID > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
-echo 0 > "$PROJECT_ROOT/.opencode/tasks/TASK-N.retries"
+echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
+echo 0 > "$PROJECT_ROOT/.delegate/tasks/TASK-N.retries"
 
 # Watchdog: SIGTERM after timeout, SIGKILL after 30s grace
 (sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
   && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
-echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.watchdog.pid"
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```
 
 **`none` — abort:**
@@ -159,9 +159,9 @@ When self-healing retries with `--continue` (reuse `$PROJECT_ROOT`, `$WORK_DIR`,
 ```bash
 nohup opencode run \
   "Continue the task from where you left off." \
-  --file "$PROJECT_ROOT/.opencode/tasks/TASK-N.md" \
+  --file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md" \
   --dir "$WORK_DIR" \
   --continue \
   $OPENCODE_AUTO_FLAG \
-  > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+  > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 ```
