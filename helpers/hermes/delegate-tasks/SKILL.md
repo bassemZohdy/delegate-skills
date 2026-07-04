@@ -61,26 +61,32 @@ terminal(command="<project test command, e.g. npm test or pytest>", workdir="<pr
 ### Step 1 — Determine Next Task Number
 
 ```
-terminal(command="grep -c '^## \\[TASK-' TODO.md 2>/dev/null || echo 0", workdir="<project>")
+terminal(command="grep -ch '^## \\[TASK-' TODO.md TODO-ARCHIVE.md 2>/dev/null | awk '{s+=$1} END {print s+0}'", workdir="<project>")
 ```
 
-Increment by 1. Use `TASK-<N>` (e.g. `TASK-1`) throughout.
+Increment by 1. Use `TASK-<N>` (e.g. `TASK-1`) throughout. Checking `TODO-ARCHIVE.md` too matters if completed tasks have been archived out of `TODO.md` — otherwise a reused TASK-N would collide with archived history.
 
 ---
 
-### Step 2 — Create Git Worktree
-
-```
-terminal(command="git worktree add .opencode/worktrees/TASK-<N> -b <runtime>/TASK-<N>", workdir="<project>")
-```
-
----
-
-### Step 3 — Write TODO.md Entry
+### Step 2 — Write TODO.md Entry
 
 Append to `TODO.md` (create it if absent):
 ```
 terminal(command="cat >> TODO.md << 'ENTRY'\n\n## [TASK-<N>] <short title>\n- status: in_progress\n- owner: <runtime>/<timestamp>\n- agent: <runtime>\n- started: <ISO-8601>\n- timeout: <seconds>\n- worktree: .opencode/worktrees/TASK-<N>\n- branch: <runtime>/TASK-<N>\n- handoff: .opencode/tasks/TASK-<N>.md\n\n### Sub-tasks\n- [ ] <sub-task 1>\n\n### Verification\n<done criteria>\nENTRY", workdir="<project>")
+```
+
+Commit it now, before creating the worktree:
+```
+terminal(command="git add TODO.md && git commit -m 'TASK-<N>: add ledger entry'", workdir="<project>")
+```
+A worktree only sees *committed* history — creating it before this commit leaves the worktree with no trace of the task that owns it, and leaves `TODO.md` dirty in the main tree, which trips the Step 0 clean-tree check on the next delegation.
+
+---
+
+### Step 3 — Create Git Worktree
+
+```
+terminal(command="git worktree add .opencode/worktrees/TASK-<N> -b <runtime>/TASK-<N>", workdir="<project>")
 ```
 
 ---
@@ -112,8 +118,9 @@ If `scripts/delegate.sh` is not present in the project, launch directly. See CLI
 
 **opencode:**
 ```
-terminal(command="nohup opencode run 'Execute handoff.' --file .opencode/tasks/TASK-<N>.md --dir .opencode/worktrees/TASK-<N> --dangerously-skip-permissions > .opencode/tasks/TASK-<N>.log 2>&1 & echo $!", workdir="<project>")
+terminal(command="PROJECT_ROOT=$(pwd) && OPENCODE_AUTO=$(opencode run --help 2>&1 | grep -qo -- '--auto' && echo --auto || (opencode run --help 2>&1 | grep -qo -- '--dangerously-skip-permissions' && echo --dangerously-skip-permissions)) && nohup opencode run 'Execute handoff.' --file \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.md\" --dir \"$PROJECT_ROOT/.opencode/worktrees/TASK-<N>\" $OPENCODE_AUTO > \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
 ```
+`--dir` points opencode's cwd at the worktree, so `--file` must be an absolute path — a relative one silently fails to resolve. The auto-approval flag name varies by version (`--auto` replaced `--dangerously-skip-permissions` as of opencode v1.17.x) — detect it rather than hardcoding.
 
 **pi:**
 ```
@@ -139,8 +146,9 @@ The `printf` framing is mandatory — piping the raw handoff risks Codex treatin
 
 **mimo:**
 ```
-terminal(command="nohup mimo run 'Execute handoff.' --file .opencode/tasks/TASK-<N>.md --dir .opencode/worktrees/TASK-<N> --dangerously-skip-permissions > .opencode/tasks/TASK-<N>.log 2>&1 & echo $!", workdir="<project>")
+terminal(command="PROJECT_ROOT=$(pwd) && nohup mimo run 'Execute handoff.' --file \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.md\" --dir \"$PROJECT_ROOT/.opencode/worktrees/TASK-<N>\" --dangerously-skip-permissions > \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
 ```
+Same absolute-path requirement as opencode above — `--dir` changes mimo's cwd, so `--file` must be absolute.
 
 **agy:**
 ```
@@ -175,14 +183,18 @@ terminal(command="tail -30 .opencode/tasks/TASK-<N>.log", workdir="<project>")
 terminal(command="wc -c < .opencode/tasks/TASK-<N>.log", workdir="<project>")
 ```
 
-If the log stops growing, the agent stalled. Kill and retry with `--continue`:
+If the log stops growing, the agent stalled. Kill and retry with `--continue` (reuse `$PROJECT_ROOT` and `$OPENCODE_AUTO` from the initial launch):
 ```
-terminal(command="kill <PID> && nohup opencode run 'Continue from where you left off.' --file .opencode/tasks/TASK-<N>.md --dir .opencode/worktrees/TASK-<N> --continue --dangerously-skip-permissions > .opencode/tasks/TASK-<N>.log 2>&1 & echo $!", workdir="<project>")
+terminal(command="kill <PID> && nohup opencode run 'Continue from where you left off.' --file \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.md\" --dir \"$PROJECT_ROOT/.opencode/worktrees/TASK-<N>\" --continue $OPENCODE_AUTO > \"$PROJECT_ROOT/.opencode/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
 ```
 
-**On completion** — update TODO.md and report to user:
+**On completion** — update TODO.md, commit it, and report to user:
 ```
-terminal(command="sed -i 's/status: in_progress/status: completed/' TODO.md", workdir="<project>")
+terminal(command="sed -i 's/status: in_progress/status: completed/' TODO.md && git add TODO.md && git commit -m 'TASK-<N>: mark completed'", workdir="<project>")
+```
+Committing keeps the main tree clean before the next delegation. Merging the worktree's actual code changes into the current branch is a separate, deliberate step — report the merge command to the user rather than running it automatically, since it changes their current branch:
+```
+terminal(command="git merge <runtime>/TASK-<N> && git worktree remove .opencode/worktrees/TASK-<N> && git branch -d <runtime>/TASK-<N>", workdir="<project>")
 ```
 
 ---
@@ -203,9 +215,10 @@ Retry counter: track in `.opencode/tasks/TASK-<N>.retries` file and in the `retr
 
 ## Rules
 
-1. Write handoff doc BEFORE launching — it is the agent's only context
-2. Capture `PROJECT_ROOT=$(pwd)` BEFORE `cd`ing into the worktree — all absolute paths depend on it
-3. Never expand handoff markdown into a shell variable — always pass as a file path
-4. The `active_form` in the handoff tells you what mid-task progress looks like before the process exits
-5. A task is `completed` only when verification passes, not when the process exits
-6. For hermes self-delegation (hermes spawning hermes), use `--continue` in the child so sessions don't collide
+1. Commit the TODO.md ledger entry BEFORE creating the worktree — worktrees only see committed history, so a worktree created first would never see the entry, and an uncommitted TODO.md blocks the next delegation's clean-tree check
+2. Write handoff doc BEFORE launching — it is the agent's only context
+3. Capture `PROJECT_ROOT=$(pwd)` BEFORE `cd`ing into the worktree — all absolute paths depend on it
+4. Never expand handoff markdown into a shell variable — always pass as a file path
+5. The `active_form` in the handoff tells you what mid-task progress looks like before the process exits
+6. A task is `completed` only when verification passes, not when the process exits
+7. For hermes self-delegation (hermes spawning hermes), use `--continue` in the child so sessions don't collide

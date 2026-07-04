@@ -94,10 +94,17 @@ fi
 case "$RUNTIME" in
 
   opencode)
+    # Flag name has changed across opencode versions (--dangerously-skip-permissions
+    # was replaced by --auto as of v1.17.x) — detect instead of hardcoding.
+    OPENCODE_HELP=$(opencode run --help 2>&1)
+    OPENCODE_AUTO=""
+    echo "$OPENCODE_HELP" | grep -q -- "--auto" && OPENCODE_AUTO="--auto"
+    echo "$OPENCODE_HELP" | grep -q -- "--dangerously-skip-permissions" && OPENCODE_AUTO="--dangerously-skip-permissions"
+    # shellcheck disable=SC2086
     nohup opencode run "Execute the task in the handoff document." \
       --file "$TASK_FILE" \
       --dir  "$WORK_DIR" \
-      --dangerously-skip-permissions \
+      $OPENCODE_AUTO \
       > "$LOG_FILE" 2>&1 &
     TASK_PID=$!
     ;;

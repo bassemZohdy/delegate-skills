@@ -2,10 +2,10 @@
 # Mock mimo runtime for testing
 set -euo pipefail
 
-: "${MOCK_OUT_DIR:?MOCK_OUT_DIR not set}"
-mkdir -p "$MOCK_OUT_DIR"
-
-# Special case: --help invocation (for feature detection)
+# Special case: --help invocation (for feature detection). Checked before the
+# MOCK_OUT_DIR requirement below — real --help doesn't need any env setup, so a
+# future test exercising delegate.sh's mimo path without MOCK_OUT_DIR set
+# (mirroring the not-a-git-repo / worktree-reuse opencode tests) won't break.
 if [ "$1" = "run" ] && [ "$2" = "--help" ]; then
   cat <<'EOF'
 mimo run — Execute tasks with mimo
@@ -19,6 +19,9 @@ EOF
   fi
   exit 0
 fi
+
+: "${MOCK_OUT_DIR:?MOCK_OUT_DIR not set}"
+mkdir -p "$MOCK_OUT_DIR"
 
 # Record invocation details
 printf '%s\n' "$@" > "$MOCK_OUT_DIR/mimo.args"

@@ -264,7 +264,7 @@ test_opencode_happy() {
   grep -qF -- "$SANDBOX/.opencode/tasks/TASK-4.md" "$SANDBOX/mockout/opencode.args" || return 1
   grep -qF -- "--dir" "$SANDBOX/mockout/opencode.args" || return 1
   grep -qF -- "$SANDBOX/.opencode/worktrees/TASK-4" "$SANDBOX/mockout/opencode.args" || return 1
-  grep -qF -- "--dangerously-skip-permissions" "$SANDBOX/mockout/opencode.args" || return 1
+  grep -qF -- "--auto" "$SANDBOX/mockout/opencode.args" || return 1
 
   # Confirm the log actually captured the mock's output once it finished.
   # The mock writes its .status file, THEN echoes its completion line to

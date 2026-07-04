@@ -5,6 +5,56 @@ the `metadata.version` field in each skill's `SKILL.md`.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.1] — 2026-07-03
+
+Bugs found via a live end-to-end smoke test (`/delegate-to-any` against installed
+opencode v1.17.13) plus a workflow-ordering gap flagged during review.
+
+### Fixed
+
+- **stale opencode auto-approval flag** (`delegate-to-opencode`, `delegate-to-mimo`,
+  `delegate-to-any`, `helpers/scripts/delegate.sh`, `helpers/adapters/generic-prompt.md`,
+  `helpers/hermes/delegate-tasks/SKILL.md`): `--dangerously-skip-permissions` no
+  longer exists in opencode ≥ v1.17.x (replaced by `--auto`), so every opencode
+  launch failed at startup. Flag is now detected from `opencode run --help` output
+  instead of hardcoded, matching the pattern already used for mimo's flags.
+- **relative `--file` path breaks under `--dir`** (`delegate-to-opencode`,
+  `delegate-to-mimo`): passing `--dir <worktree>` changes the runtime's cwd, so a
+  relative `--file .opencode/tasks/TASK-N.md` no longer resolves — the worktree
+  has no `.opencode/tasks/` directory of its own (it's gitignored, project-root
+  only). All `--file`/log/pid paths in these launch blocks are now built from a
+  `PROJECT_ROOT` captured before any `--dir`/`cd`. `helpers/scripts/delegate.sh`
+  already did this correctly and was unaffected.
+- **worktree created before its TODO.md ledger entry exists**
+  (`skills/shared/workflow.md`, `helpers/adapters/generic-prompt.md`,
+  `helpers/hermes/delegate-tasks/SKILL.md`): Step 1 (create worktree) ran before
+  Step 2 (write TODO.md entry), but a git worktree only sees *committed* history —
+  since the ledger entry was written as an uncommitted change in the main tree
+  afterward, the worktree never contained it, and the uncommitted `TODO.md` also
+  tripped the next delegation's Step 0 dirty-tree check. Swapped the order: the
+  ledger entry is now written and committed first, then the worktree branches off
+  that commit. Completion status updates are committed the same way. Merging the
+  worktree's actual code changes into the current branch remains a manual,
+  user-facing step (documented in `docs/usage.md`) — never automatic.
+- **opencode flag-detection hang in `helpers/scripts/delegate.sh`**
+  (`tests/fixtures/mock-bin/opencode`, `tests/fixtures/mock-bin/mimo`,
+  `tests/test-behavior.sh`): the auto-approval-flag fix above added
+  `$(opencode run --help)` inside `delegate.sh`. Against the test suite's mock
+  binaries this hung indefinitely under `MOCK_HANG=1` (the mock had no
+  `--help` short-circuit, so the command substitution blocked on the mock's
+  infinite heartbeat loop with no timeout — the same hazard the suite already
+  had a comment warning about for `pi`/`hermes`/`kimi`, just not yet hit for
+  opencode) and, separately, hard-failed under `set -e` in two tests that
+  don't set `MOCK_OUT_DIR` (real `--help` needs no env setup, but the mock
+  required it before reaching its `--help` branch). Fixed at the root: the
+  opencode mock now special-cases `--help` and returns before both the
+  `MOCK_OUT_DIR` check and the heartbeat loop, matching the pattern `mimo`'s
+  mock already used (which had the identical `MOCK_OUT_DIR`-ordering bug,
+  latent but never triggered by an existing test — fixed there too). Updated
+  the one test assertion that hardcoded the now-removed
+  `--dangerously-skip-permissions` flag to expect `--auto`. Full suite verified
+  green across 4 consecutive runs (436/436) with no leaked processes.
+
 ## [1.2.0] — 2026-07-03
 
 Follow-up review. Two stale cross-references from the v1.1.0 restructure and one

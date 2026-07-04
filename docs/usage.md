@@ -74,6 +74,8 @@ your-project/
         └── TASK-N/                     # isolated git checkout
 ```
 
+The skill commits `TODO.md` itself at two points — right after the ledger entry is added (before the worktree is created, so the worktree branches from a commit that already includes it) and again when the task is marked completed. This keeps the main tree clean between delegations and means the merge below never touches `TODO.md`. Merging the worktree's actual code changes is left to you — the skill won't do this automatically since it changes your current branch.
+
 After a successful run, merge the worktree (replace `<runtime>` with `opencode`, `pi`, `codex`, etc.):
 
 ```bash

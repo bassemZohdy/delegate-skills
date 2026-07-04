@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and at least one of: oh-my-opencode, opencode, pi, mimo, hermes, kimi, codex, or agy on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.2.0
+  version: 1.2.1
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -116,9 +116,11 @@ TIMEOUT_SECS=<seconds from timeout tier>
 
 # >>> Insert the chosen runtime's nohup launch line here (from delegate-to-<runtime>/SKILL.md).
 # >>> It must background with '&' and redirect to the log path below.
+# >>> Use $PROJECT_ROOT-absolute paths for --file — --dir changes the runtime's cwd
+# >>> to the worktree, so a relative --file path silently fails to resolve.
 # >>> e.g. opencode:
-# nohup opencode run "..." --file ".opencode/tasks/TASK-N.md" --dir "$WORK_DIR" \
-#   --dangerously-skip-permissions > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+# nohup opencode run "..." --file "$PROJECT_ROOT/.opencode/tasks/TASK-N.md" --dir "$WORK_DIR" \
+#   $OPENCODE_AUTO_FLAG > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
 
 TASK_PID=$!
 echo $TASK_PID > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"

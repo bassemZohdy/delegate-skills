@@ -52,23 +52,17 @@ If there are tests in this project, run them once before proceeding and record w
 
 ---
 
-## Step 1: Create a Git Worktree
-
-Parallel agents writing to the same working tree corrupt each other. Create an isolated checkout:
-
-```bash
-TASK_N=<next available N from TODO.md>
-RUNTIME=<opencode|pi|mimo — whichever skill is running>
-git worktree add .opencode/worktrees/TASK-$TASK_N -b $RUNTIME/TASK-$TASK_N
-```
-
-If the project is not a git repo, skip this step, log `worktree: none` in TODO.md, and proceed on the current working tree.
-
----
-
-## Step 2: Update TODO.md
+## Step 1: Update TODO.md
 
 `TODO.md` lives at the project root and is the shared ledger for all agents. Create it if it doesn't exist. Append a new block — never edit or delete existing blocks.
+
+```bash
+# Count blocks in both TODO.md and TODO-ARCHIVE.md (if present) — completed
+# tasks may have been archived out of TODO.md, and reusing an already-used
+# TASK-N would collide with that history.
+LAST_N=$(grep -ch '^## \[TASK-' TODO.md TODO-ARCHIVE.md 2>/dev/null | awk '{s+=$1} END {print s+0}')
+TASK_N=$((LAST_N + 1))
+```
 
 ```markdown
 ## [TASK-N] <short title>
@@ -99,6 +93,25 @@ If the project is not a git repo, skip this step, log `worktree: none` in TODO.m
 ```
 
 The `active_form` field is critical — it tells a reviewing agent what to look for in the log and filesystem before the task exits. Without it, agents mark tasks done the moment the process stops rather than when the work is actually complete.
+
+**Commit this ledger entry now**, before creating the worktree:
+```bash
+git add TODO.md && git commit -m "TASK-N: add ledger entry"
+```
+This matters for two reasons: (1) it keeps the working tree clean going into Step 2, so Step 0's dirty-tree check doesn't fire on the *next* delegation; (2) the worktree branch created in Step 2 branches off this commit, so the ledger entry is part of the worktree's own history from the start. Worktrees only share *committed* history, not the main tree's uncommitted edits — a `TODO.md` change made after the worktree already exists is invisible inside it. (The delegated agent itself never needs to read `TODO.md` — it works from the handoff document in Step 3, attached by absolute path — but the worktree should never be inconsistent with the ledger entry describing it.) If the project is not a git repo, skip the commit — there's no history to keep consistent.
+
+---
+
+## Step 2: Create a Git Worktree
+
+Parallel agents writing to the same working tree corrupt each other. Create an isolated checkout, branched from the commit just made in Step 1:
+
+```bash
+RUNTIME=<opencode|pi|mimo — whichever skill is running>
+git worktree add .opencode/worktrees/TASK-$TASK_N -b $RUNTIME/TASK-$TASK_N
+```
+
+If the project is not a git repo, skip this step, log `worktree: none` in TODO.md, and proceed on the current working tree.
 
 ---
 
@@ -243,7 +256,9 @@ Clear the `owner` field.
 WATCHDOG=$(cat ".opencode/tasks/TASK-N.watchdog.pid" 2>/dev/null)
 kill "$WATCHDOG" 2>/dev/null
 ```
-Report to user: what was built, where it lives, any caveats.
+**Commit the TODO.md status update** in the main tree — `git add TODO.md && git commit -m "TASK-N: mark completed"` — so the tree is clean again before the next delegation. This is separate from merging the worktree's actual code changes: that merge is a deliberate, user-facing action (see `docs/usage.md`, "What gets created") and should not happen without the user's go-ahead, since it changes their current branch.
+
+Report to user: what was built, where it lives, any caveats, and the merge/cleanup commands from `docs/usage.md` to bring the work into the current branch when ready.
 
 **If verification fails:**
 - Log what specifically failed.

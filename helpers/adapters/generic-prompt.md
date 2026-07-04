@@ -26,13 +26,10 @@ Run: `git status --short && git rev-parse HEAD && git branch --show-current`
 - Record the base SHA for the handoff document.
 
 ### Step 1 — Determine Task ID
-Run: `grep -c '^## \[TASK-' TODO.md 2>/dev/null || echo 0`
-Increment by 1. Use TASK-N (e.g. TASK-1) everywhere below.
+Run: `grep -ch '^## \[TASK-' TODO.md TODO-ARCHIVE.md 2>/dev/null | awk '{s+=$1} END {print s+0}'`
+Increment by 1. Use TASK-N (e.g. TASK-1) everywhere below. Checking `TODO-ARCHIVE.md` too matters if completed tasks have been archived out of `TODO.md` — otherwise a reused TASK-N would collide with archived history.
 
-### Step 2 — Create Worktree
-Run: `git worktree add .opencode/worktrees/TASK-N -b <runtime>/TASK-N`
-
-### Step 3 — Write TODO.md Entry
+### Step 2 — Write TODO.md Entry
 Append to TODO.md (create if absent):
 
 ```
@@ -52,6 +49,11 @@ Append to TODO.md (create if absent):
 ### Verification
 <exact commands and files to check>
 ```
+
+Commit it now, before creating the worktree: `git add TODO.md && git commit -m "TASK-N: add ledger entry"`. A worktree only sees *committed* history — creating it before this commit would leave the worktree with no trace of the task that owns it, and leave TODO.md dirty in the main tree, tripping Step 0's clean-tree check on the next delegation.
+
+### Step 3 — Create Worktree
+Run: `git worktree add .opencode/worktrees/TASK-N -b <runtime>/TASK-N`
 
 ### Step 4 — Write Handoff Document
 Create `.opencode/tasks/TASK-N.md` (agent's only context — 200–500 tokens):
@@ -91,8 +93,14 @@ Otherwise launch directly:
 
 **opencode:**
 ```
-nohup opencode run "Execute handoff." --file .opencode/tasks/TASK-N.md --dir .opencode/worktrees/TASK-N --dangerously-skip-permissions > .opencode/tasks/TASK-N.log 2>&1 &
-echo $! > .opencode/tasks/TASK-N.pid
+PROJECT_ROOT="$(pwd)"
+# --dir points opencode's cwd at the worktree, so --file must be absolute or it
+# won't resolve. Auto-approval flag name varies by version — detect it:
+OPENCODE_AUTO=""
+opencode run --help 2>&1 | grep -q -- "--auto" && OPENCODE_AUTO="--auto"
+opencode run --help 2>&1 | grep -q -- "--dangerously-skip-permissions" && OPENCODE_AUTO="--dangerously-skip-permissions"
+nohup opencode run "Execute handoff." --file "$PROJECT_ROOT/.opencode/tasks/TASK-N.md" --dir "$PROJECT_ROOT/.opencode/worktrees/TASK-N" $OPENCODE_AUTO > "$PROJECT_ROOT/.opencode/tasks/TASK-N.log" 2>&1 &
+echo $! > "$PROJECT_ROOT/.opencode/tasks/TASK-N.pid"
 ```
 
 **pi:**
@@ -163,7 +171,8 @@ Self-heal rules:
 When the agent finishes and verification passes:
 - Update TODO.md: `status: completed`, `reviewed: <ISO>`, `outcome: <one line>`
 - Check off sub-tasks in TODO.md
-- Report to user: what finished, what verification shows, merge command
+- Commit the update: `git add TODO.md && git commit -m "TASK-N: mark completed"` — keeps the main tree clean before the next delegation
+- Report to user: what finished, what verification shows, merge command (do not merge automatically — it changes the user's current branch)
 
 Merge command:
 ```
@@ -183,10 +192,11 @@ For tools with custom slash commands (Continue.dev, Cursor, etc.), a shorter ver
 You are delegating a coding task. Follow the delegation protocol:
 1. Check git status. If dirty, ask the user.
 2. Find the next TASK-N from TODO.md (or start at TASK-1).
-3. Create worktree: `git worktree add .opencode/worktrees/TASK-N -b <runtime>/TASK-N`
-4. Write .opencode/tasks/TASK-N.md as a 200-500 token cold-start briefing.
-5. Launch: `bash scripts/delegate.sh <runtime> TASK-N 1800`
-6. Report the task ID, log path, and expected completion time.
+3. Append the TODO.md entry and commit it: `git add TODO.md && git commit -m "TASK-N: add ledger entry"`.
+4. Create worktree: `git worktree add .opencode/worktrees/TASK-N -b <runtime>/TASK-N`
+5. Write .opencode/tasks/TASK-N.md as a 200-500 token cold-start briefing.
+6. Launch: `bash scripts/delegate.sh <runtime> TASK-N 1800`
+7. Report the task ID, log path, and expected completion time.
 
 Task to delegate: {input}
 Runtime to use: {runtime}

@@ -2,6 +2,26 @@
 # Mock opencode runtime for testing
 set -euo pipefail
 
+# Special case: --help invocation (for feature detection). Checked before the
+# MOCK_OUT_DIR requirement below — real --help doesn't need any env setup, and
+# tests that never set MOCK_OUT_DIR (e.g. not-a-git-repo, worktree-reuse) would
+# otherwise fail as soon as delegate.sh's flag-detection calls `opencode run
+# --help`. Must also return before the heartbeat loop further down: real CLIs
+# answer --help instantly, and delegate.sh calls this via command substitution
+# with no timeout, so falling through to the loop would hang forever under
+# MOCK_HANG=1.
+if [ "$1" = "run" ] && [ "$2" = "--help" ]; then
+  cat <<'EOF'
+opencode run — Execute tasks with opencode
+
+Options:
+--dir <path>     Working directory
+--file <path>    Attach a file
+--auto           Auto-approve permissions that are not explicitly denied (dangerous!)
+EOF
+  exit 0
+fi
+
 : "${MOCK_OUT_DIR:?MOCK_OUT_DIR not set}"
 mkdir -p "$MOCK_OUT_DIR"
 

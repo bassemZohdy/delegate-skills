@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and hermes on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.2.0
+  version: 1.2.1
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
