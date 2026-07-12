@@ -766,6 +766,218 @@ test_watchdog_sigterm() {
   grep -q "KILLED" "$SANDBOX/mockout/opencode.status" || return 1
 }
 
+# ─── Test 17: real exit code capture ────────────────────────────────────
+
+test_exit_code_capture() {
+  local SANDBOX
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+
+  mkdir -p "$SANDBOX/bin" "$SANDBOX/mockout"
+  init_git_repo "$SANDBOX"
+  create_handoff "$SANDBOX" "TASK-17"
+  cp "$FIXTURES/opencode" "$SANDBOX/bin/"
+  chmod +x "$SANDBOX/bin/opencode"
+
+  cd "$SANDBOX"
+  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-17 30 < /dev/null > "$SANDBOX/test_out.txt" 2>&1
+  [ "$?" = "0" ] || return 1
+  snapshot_watchdog_children "$SANDBOX"
+
+  # Mock completes normally (exit 0) — wait for it to actually finish.
+  wait_for_mock_file "$SANDBOX/mockout/opencode.status" || return 1
+  local waited=0
+  while [ ! -f "$SANDBOX/.delegate/tasks/TASK-17.exitcode" ] && [ "$waited" -lt 50 ]; do
+    sleep 0.1; waited=$((waited + 1))
+  done
+
+  [ -f "$SANDBOX/.delegate/tasks/TASK-17.exitcode" ] || return 1
+  [ "$(cat "$SANDBOX/.delegate/tasks/TASK-17.exitcode")" = "0" ] || return 1
+
+  # The watchdog must have self-cancelled — no lingering supervisor/timer.
+  local wpid
+  wpid=$(cat "$SANDBOX/.delegate/tasks/TASK-17.watchdog.pid" 2>/dev/null)
+  sleep 1
+  kill -0 "$wpid" 2>/dev/null && return 1
+
+  local status_out
+  status_out=$(bash "$DELEGATE_SH" status TASK-17)
+  echo "$status_out" | grep -q "^STATE=EXITED_OK$" || return 1
+}
+
+# ─── Test 18: status reports failure exit codes ─────────────────────────
+
+test_status_failed_exitcode() {
+  local SANDBOX
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+
+  mkdir -p "$SANDBOX/bin" "$SANDBOX/mockout"
+  init_git_repo "$SANDBOX"
+  create_handoff "$SANDBOX" "TASK-18"
+  cp "$FIXTURES/opencode" "$SANDBOX/bin/"
+  chmod +x "$SANDBOX/bin/opencode"
+
+  cd "$SANDBOX"
+  PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-18 2 < /dev/null > "$SANDBOX/test_out.txt" 2>&1
+  [ "$?" = "0" ] || return 1
+  snapshot_watchdog_children "$SANDBOX"
+
+  # Timeout fires (2s), watchdog TERMs the mock, which exits 143.
+  local waited=0
+  while [ ! -f "$SANDBOX/.delegate/tasks/TASK-18.exitcode" ] && [ "$waited" -lt 100 ]; do
+    snapshot_watchdog_children "$SANDBOX"
+    sleep 0.1; waited=$((waited + 1))
+  done
+  snapshot_watchdog_children "$SANDBOX"
+
+  [ -f "$SANDBOX/.delegate/tasks/TASK-18.exitcode" ] || return 1
+  local code
+  code=$(cat "$SANDBOX/.delegate/tasks/TASK-18.exitcode")
+  [ "$code" != "0" ] || return 1
+
+  local status_out
+  status_out=$(bash "$DELEGATE_SH" status TASK-18)
+  echo "$status_out" | grep -q "^STATE=EXITED_FAILED$" || return 1
+  echo "$status_out" | grep -q "^EXITCODE=$code$" || return 1
+}
+
+# ─── Test 19: status NOT_FOUND for an unknown task ──────────────────────
+
+test_status_not_found() {
+  local SANDBOX
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+  mkdir -p "$SANDBOX/.delegate/tasks"
+  cd "$SANDBOX"
+  bash "$DELEGATE_SH" status TASK-999 | grep -q "^STATE=NOT_FOUND$" || return 1
+}
+
+# ─── Test 20: verify runs the handoff's fenced verification block ────────
+
+test_verify_pass_and_fail() {
+  local SANDBOX
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+
+  mkdir -p "$SANDBOX/.delegate/tasks"
+  cd "$SANDBOX"
+
+  cat > "$SANDBOX/.delegate/tasks/TASK-20.md" <<'EOF'
+# Handoff: TASK-20
+
+## Verification Expectations
+```bash
+echo "checking"
+exit 0
+```
+EOF
+  # Captured via command substitution rather than piped straight into grep:
+  # under pipefail (active in run-tests.sh), a pipeline's exit status is the
+  # rightmost NONZERO stage — so `verify | grep -q ...` would report verify's
+  # own designed-nonzero exit code even when grep matched successfully.
+  local out20
+  out20=$(bash "$DELEGATE_SH" verify TASK-20)
+  echo "$out20" | grep -q "^STATE=PASS$" || return 1
+
+  cat > "$SANDBOX/.delegate/tasks/TASK-21.md" <<'EOF'
+# Handoff: TASK-21
+
+## Verification Expectations
+```bash
+exit 7
+```
+EOF
+  local out
+  out=$(bash "$DELEGATE_SH" verify TASK-21)
+  local code=$?
+  echo "$out" | grep -q "^STATE=FAIL$" || return 1
+  echo "$out" | grep -q "^EXITCODE=7$" || return 1
+  [ "$code" = "7" ] || return 1
+
+  # No fenced block at all → NO_VERIFICATION_BLOCK, distinct from FAIL.
+  cat > "$SANDBOX/.delegate/tasks/TASK-22.md" <<'EOF'
+# Handoff: TASK-22
+
+## Verification Expectations
+Just check it manually.
+EOF
+  local out22
+  out22=$(bash "$DELEGATE_SH" verify TASK-22 2>/dev/null)
+  echo "$out22" | grep -q "^STATE=NO_VERIFICATION_BLOCK$" || return 1
+}
+
+# ─── Test 21: reconcile reports stale in_progress entries ────────────────
+
+test_reconcile_stale() {
+  local SANDBOX
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+  mkdir -p "$SANDBOX/.delegate/tasks"
+  cd "$SANDBOX"
+
+  cat > "$SANDBOX/TODO.md" <<'EOF'
+## [TASK-30] a completed one
+- status: completed
+
+## [TASK-31] an orphaned one, never launched
+- status: in_progress
+
+## [TASK-32] a live one
+- status: in_progress
+EOF
+
+  # TASK-32 looks alive: give it a real, currently-running pid. Must be a
+  # disposable child process, NOT $$ (this test's own shell) — cleanup_sandbox
+  # unconditionally kills whatever pid every .pid file names, and using $$
+  # here previously made it SIGKILL the test harness itself mid-test.
+  sleep 100 &
+  local live_pid=$!
+  echo "$live_pid" > "$SANDBOX/.delegate/tasks/TASK-32.pid"
+
+  local out
+  out=$(bash "$DELEGATE_SH" reconcile)
+  kill -KILL "$live_pid" 2>/dev/null || true
+  echo "$out" | grep -q "STALE TASK-31" || return 1
+  echo "$out" | grep -q "STALE TASK-32" && return 1
+  echo "$out" | grep -q "TASK-30" && return 1
+  return 0
+}
+
+# ─── Test 22: next-id survives a missing TODO-ARCHIVE.md ─────────────────
+#
+# Regression test: `grep -h pattern TODO.md TODO-ARCHIVE.md` exits nonzero
+# when one of the files is missing even though it matched in the other; under
+# pipefail a naive `|| LAST_N=""` catch silently discards a real match. This
+# pinned the fix for that exact bug (found while first exercising `next-id`).
+
+test_next_id_missing_archive() {
+  local SANDBOX
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+  cd "$SANDBOX"
+
+  # No TODO.md at all → starts at TASK-1.
+  [ "$(bash "$DELEGATE_SH" next-id)" = "TASK-1" ] || return 1
+
+  # TODO.md exists, TODO-ARCHIVE.md does not (the common case) → increments.
+  cat > "$SANDBOX/TODO.md" <<'EOF'
+## [TASK-1] foo
+- status: completed
+EOF
+  [ ! -f "$SANDBOX/TODO-ARCHIVE.md" ] || return 1
+  [ "$(bash "$DELEGATE_SH" next-id)" = "TASK-2" ] || return 1
+
+  # Higher numbers live only in TODO-ARCHIVE.md → still takes the max.
+  cat > "$SANDBOX/TODO-ARCHIVE.md" <<'EOF'
+## [TASK-9] archived
+- status: completed
+EOF
+  [ "$(bash "$DELEGATE_SH" next-id)" = "TASK-10" ] || return 1
+}
+
 # ─── Main: Run all tests ──────────────────────────────────────────────────────
 
 test_missing_handoff && pass "Missing handoff document → exit 1 with correct error" || fail "Missing handoff document → exit 1 with correct error"
@@ -784,6 +996,12 @@ test_kimi_absolute_path && pass "kimi — cd + absolute path in prompt" || fail 
 test_not_git_repo && pass "Not a git repo → fallback to project root" || fail "Not a git repo → fallback to project root"
 test_worktree_reuse && pass "Worktree reuse — second launch for same TASK-N" || fail "Worktree reuse — second launch for same TASK-N"
 test_watchdog_sigterm && pass "Watchdog SIGTERM fires on timeout" || fail "Watchdog SIGTERM fires on timeout"
+test_exit_code_capture && pass "Real exit code captured; watchdog self-cancels on success" || fail "Real exit code captured; watchdog self-cancels on success"
+test_status_failed_exitcode && pass "status reports EXITED_FAILED with the real exit code" || fail "status reports EXITED_FAILED with the real exit code"
+test_status_not_found && pass "status reports NOT_FOUND for an unknown task" || fail "status reports NOT_FOUND for an unknown task"
+test_verify_pass_and_fail && pass "verify runs the handoff's fenced verification block" || fail "verify runs the handoff's fenced verification block"
+test_reconcile_stale && pass "reconcile reports stale in_progress entries only" || fail "reconcile reports stale in_progress entries only"
+test_next_id_missing_archive && pass "next-id survives a missing TODO-ARCHIVE.md (regression)" || fail "next-id survives a missing TODO-ARCHIVE.md (regression)"
 
 # ─── Standalone summary ───────────────────────────────────────────────────
 

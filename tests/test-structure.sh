@@ -459,9 +459,15 @@ yaml.safe_load(parts[1])
       grep -q "nohup codex exec" "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md launches codex as last pipeline element (nohup codex exec)" \
         || fail "skills/$skill/SKILL.md must launch via 'nohup codex exec' as last pipeline element"
-      grep -q "nohup bash -c" "$SKILL_FILE" \
-        && fail "skills/$skill/SKILL.md wraps codex in 'nohup bash -c' — \$! would be the wrapper PID" \
-        || pass "skills/$skill/SKILL.md avoids bash -c wrapper (watchdog targets codex itself)"
+      # Scoped to the codex invocation itself (up to its own PID capture),
+      # not the whole file — the watchdog further down legitimately uses
+      # 'nohup bash -c' (a positional-arg wrapper for the sleep/kill timer,
+      # unrelated to which PID gets recorded as the agent's own).
+      if awk '/^```bash$/,/^TASK_PID=\$!/' "$SKILL_FILE" | grep -q "nohup bash -c"; then
+        fail "skills/$skill/SKILL.md wraps codex in 'nohup bash -c' — \$! would be the wrapper PID"
+      else
+        pass "skills/$skill/SKILL.md avoids bash -c wrapper (watchdog targets codex itself)"
+      fi
       grep -q "exec resume --last\|resume.*--last" "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md retry uses 'codex exec resume --last'" \
         || fail "skills/$skill/SKILL.md retry missing 'exec resume --last'"

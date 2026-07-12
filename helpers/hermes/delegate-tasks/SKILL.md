@@ -1,7 +1,7 @@
 ---
 name: delegate-tasks
 description: "Delegate long-running coding tasks to a background agent CLI (opencode, pi, mimo, hermes, kimi, codex, agy) with git worktree isolation, structured handoff documents, and progress monitoring."
-version: 1.2.4
+version: 1.3.0
 author: delegate-skills
 license: MIT
 platforms: [linux, macos, windows]

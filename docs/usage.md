@@ -64,15 +64,44 @@ Override by stating complexity explicitly: "simple change" → Tier 1, "migratio
 your-project/
 ├── TODO.md                              # shared task ledger (append-only)
 └── .delegate/
+    ├── todo.lock/                       # transient — held only during `next-id`
     ├── tasks/
     │   ├── TASK-N.md                   # handoff document
     │   ├── TASK-N.log                  # agent output
-    │   ├── TASK-N.log.size             # log size for stall detection
-    │   ├── TASK-N.pid                  # process ID
-    │   └── TASK-N.watchdog.pid         # timeout watchdog PID
+    │   ├── TASK-N.log.size             # log size for stall detection (status)
+    │   ├── TASK-N.lastpoll             # mtime marker for the filesystem-activity
+    │   │                                # stall signal (status)
+    │   ├── TASK-N.pid                  # real agent process ID
+    │   ├── TASK-N.watchdog.pid         # supervisor process ID (launched via
+    │   │                                # scripts/delegate.sh only — see below)
+    │   ├── TASK-N.exitcode             # agent's real exit code, once it exits
+    │   ├── TASK-N.fingerprint          # best-effort process identity, guards
+    │   │                                # against a later kill hitting a reused PID
+    │   ├── TASK-N.pgid                 # process-group id, only written when
+    │   │                                # verified safe to use for a group kill
+    │   ├── TASK-N.supervisor.sh        # the generated supervisor script (kept
+    │   │                                # for inspection)
+    │   ├── TASK-N.verify.log           # output of the last `verify` run
+    │   └── TASK-N.retries              # self-healing retry counter
     └── worktrees/
         └── TASK-N/                     # isolated git checkout
 ```
+
+## `scripts/delegate.sh` subcommands
+
+If you copied `helpers/scripts/delegate.sh` into your project (see `docs/install.md`), it does more than launch — it's the preferred way to monitor and manage tasks too, since it captures information a model re-deriving the workflow from prose cannot (a real exit code, a verified process identity):
+
+```bash
+bash scripts/delegate.sh <runtime> TASK-N [timeout-secs]   # launch (unchanged)
+bash scripts/delegate.sh status TASK-N                     # machine-readable status
+bash scripts/delegate.sh verify TASK-N                     # run the handoff's ```bash verification block
+bash scripts/delegate.sh reconcile                         # find in_progress tasks orphaned by a crashed session
+bash scripts/delegate.sh next-id                           # allocate the next TASK-N (lock-protected)
+```
+
+`status` prints `STATE=RUNNING`, `STATE=STALLED`, `STATE=EXITED_OK`, `STATE=EXITED_FAILED` (with `EXITCODE=`), `STATE=LAUNCH_FAILED`, or `STATE=NOT_FOUND`. Launched tasks run inside a small supervisor process that is the agent's real parent — it captures the agent's true exit code via `wait` (not a guess from "the process disappeared"), races the timeout against natural completion and auto-cancels the timer the instant the agent exits, and is itself launched with `nohup` so it survives the calling terminal closing.
+
+`reconcile` exists because a delegated task's `TODO.md` entry stays `status: in_progress` forever if the AI session that launched it crashes or closes before reviewing completion — nothing else would ever come back to mark it done or failed. Run it at the start of a session before delegating more work.
 
 The skill commits `TODO.md` itself at two points — right after the ledger entry is added (before the worktree is created, so the worktree branches from a commit that already includes it) and again when the task is marked completed. This keeps the main tree clean between delegations and means the merge below never touches `TODO.md`. Merging the worktree's actual code changes is left to you — the skill won't do this automatically since it changes your current branch.
 
@@ -86,14 +115,17 @@ git branch -d <runtime>/TASK-N
 
 ## Self-healing
 
-The skill monitors the agent and recovers automatically:
+The skill monitors the agent and recovers automatically (via `scripts/delegate.sh status`/`verify` when present, otherwise the same decision tree run manually):
 
 | Symptom | What happens |
 |---------|--------------|
 | Process exits immediately, log < 500 bytes | Reads error, adjusts command, retries (max 2×) |
-| Process running but log not growing between polls | Kills it, retries with `--continue` |
+| Process running, log flat AND no newer files in the worktree since the last poll | Kills it, retries with `--continue` |
 | Process exits cleanly but output file missing | Retries with `--continue` |
 | Verification fails after output is produced | Retries with `--continue` and notes what failed |
 | All retries exhausted | Marks `failed`, reports log tail to you |
+| A prior session crashed mid-task, leaving `status: in_progress` forever | `scripts/delegate.sh reconcile` finds it; mark `stale` and resume with `--continue` |
 
 Retry count is tracked in `TODO.md` (`retries:` field) and in `.delegate/tasks/TASK-N.retries`.
+
+Killing a stalled or timed-out process (`scripts/delegate.sh` launches only) is itself resilient: it never signals a PID that no longer matches the process fingerprint recorded at launch (guards against an unrelated process reusing that PID), and it terminates the agent's child processes too, not just the single top-level PID.

@@ -5,6 +5,101 @@ the `metadata.version` field in each skill's `SKILL.md`.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.0] — 2026-07-12
+
+Resilience pass: `helpers/scripts/delegate.sh` gains real monitoring/management
+subcommands and a rearchitected launch path, closing gaps found in a review of
+how well the delegation mechanics hold up under crashes, PID reuse, and
+platform differences (this repo is developed and tested on Windows/Git Bash,
+which surfaced several of these).
+
+### Added
+
+- **`delegate.sh status TASK-N`** — machine-readable liveness/outcome check
+  (`STATE=RUNNING|STALLED|EXITED_OK|EXITED_FAILED|LAUNCH_FAILED|NOT_FOUND`,
+  plus `EXITCODE=`/`LOG_SIZE=`/`RETRIES=`). Cross-checks log growth against
+  worktree filesystem activity before calling a task `STALLED`, so a healthy
+  agent doing a long silent compile isn't misread as stuck.
+- **`delegate.sh verify TASK-N`** — extracts and runs the fenced ` ```bash `
+  block under a handoff's `## Verification Expectations` section, reporting
+  `STATE=PASS`/`FAIL` with the real exit code. Turns "completed only when
+  verification passes" from a judgment call into something enforceable the
+  same way regardless of which host tool is running the workflow.
+- **`delegate.sh reconcile`** — reports `TODO.md` entries stuck at
+  `status: in_progress` whose process isn't actually running, the case where
+  the AI session that launched a task crashed or closed before it could
+  review completion and nothing was ever going to mark it done or failed.
+- **`delegate.sh next-id`** — allocates the next `TASK-N` under an
+  `mkdir`-based lock (portable to every platform this repo targets, including
+  Windows, unlike `flock`) with 30s staleness recovery, closing the
+  documented "TODO.md has no lock" race for callers that use it.
+- **Real exit-code capture**: launch no longer backgrounds the agent directly.
+  It generates a small supervisor script (`TASK-N.supervisor.sh`, kept for
+  inspection) that forks the agent as *its own* child, so `wait` yields the
+  agent's true exit code instead of inferring outcome from "the process is
+  gone." The supervisor races a timeout timer against that `wait` and
+  cancels the timer itself the instant the agent exits — the "must remember
+  to cancel the watchdog on success" step from earlier versions is now
+  automatic for anything launched this way.
+- **PID-reuse guard**: a best-effort process fingerprint (`ps -o lstart=`,
+  falling back to the full command line) is recorded at launch; a later kill
+  is skipped if the live process's fingerprint no longer matches, rather than
+  risking a signal to an unrelated process that reused the PID.
+- **Process-tree kill**: stalled/timed-out agents are terminated via a child
+  scan (one level, catching helper processes the agent spawned) plus a
+  process-group kill — but the group kill only fires when launch *verified*
+  the recorded PID is its own group leader, never blindly, since `kill -SIG
+  -PID` against an unverified id risks hitting an unrelated live group that
+  happens to share that number.
+- **Cygwin/MSYS `ps` portability layer**: Git Bash on Windows ships a `ps`
+  that doesn't support `-o <field>=` at all, only fixed-column `-f`/`-l`/`-ef`
+  output — the fingerprint/pgid/child-scan features above would silently
+  never activate there otherwise. Added a fallback that reads the fixed
+  format's own header line and maps columns by name.
+- **`shared/workflow.md` existence guard**: every `SKILL.md` now tells the
+  model to stop and ask for a `shared/`-inclusive reinstall if
+  `../shared/workflow.md` is missing, instead of improvising the workflow
+  from memory when a partial install broke the reference.
+- **`$ARGUMENTS` non-substitution fallback**: `skills/shared/workflow.md` now
+  notes that if the `## Task` section still literally reads `$ARGUMENTS`
+  after a host is supposed to have substituted it, treat the user's original
+  request text as the task description instead.
+- **Watchdog now `nohup`'d** in every per-runtime `SKILL.md`'s manual/prose
+  launch block and in `helpers/adapters/generic-prompt.md` — a bare
+  backgrounded subshell is not guaranteed to survive the calling
+  terminal/session closing; `delegate.sh`'s supervisor already got this via
+  its own `nohup bash SUP_FILE`.
+- **`.agents/skills/` mirror committed**, kept in sync via a structure test
+  (added in 1.2.4; this release is the first with real drift risk from the
+  volume of changes, so it's called out again here).
+
+### Fixed
+
+- **`cd X && cmd &` captured the wrong PID**: the pi/hermes/kimi/mimo-fallback
+  cd-then-launch pattern, when written as `cd "$WORK_DIR" && cmd &`,
+  backgrounds the *whole compound list* as one job — bash forks a wrapper
+  subshell to run it, and `$!` becomes that wrapper's PID instead of `cmd`'s.
+  The same class of bug the 1.2.4 codex fix addressed, reintroduced here via
+  `&&` instead of a pipe while building the new supervisor. `cd` must be its
+  own statement on its own line before the (unjoined) launch line.
+- **`grep -h pattern TODO.md TODO-ARCHIVE.md` silently discarding a real
+  match**: grep exits nonzero when either file is missing, even if it matched
+  in the other; under `pipefail`, a naive `|| LAST_N=""` catch on the whole
+  pipeline fired on that exit code and threw away a correct result. First hit
+  while building `next-id`; fixed by neutralising grep's own exit status
+  inside the pipe rather than catching failure at the end.
+- **Pipeline exit status vs. `pipefail` in test assertions**: two new
+  `verify`/`status` tests piped delegate.sh's own designed-nonzero exit codes
+  directly into `grep -q ...`, which under `pipefail` reports the *pipeline's*
+  exit status (the rightmost nonzero stage) even when grep matched
+  successfully — silently failing correct behavior. Fixed by capturing output
+  via command substitution before grepping the string.
+- **Test harness self-kill**: a new `reconcile` test used its own shell's
+  `$$` to simulate "a live agent process," which `cleanup_sandbox`'s generic
+  "kill whatever every `.pid` file names" teardown then dutifully
+  `SIGKILL`ed, taking down the test harness mid-run. Fixed to use a
+  disposable child process instead.
+
 ## [1.2.4] — 2026-07-12
 
 ### Fixed

@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and hermes on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.2.4
+  version: 1.3.0
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -20,6 +20,8 @@ Hands a coding task to Hermes in the background with full isolation, structured 
 $ARGUMENTS
 
 Follow the shared workflow in [`../shared/workflow.md`](../shared/workflow.md) for Steps −1 through 3 and Step 5. This file defines only **Step 4** — the runtime-specific detection and launch logic.
+
+Before proceeding: if `../shared/workflow.md` does not exist, `shared/` was not installed alongside this skill (see docs/install.md's per-tool install steps — every skill needs it as a sibling directory). Stop and tell the user to reinstall including `shared/`, rather than improvising the workflow from memory.
 
 ---
 
@@ -74,9 +76,11 @@ TASK_PID=$!
 echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
 echo 0 > "$PROJECT_ROOT/.delegate/tasks/TASK-N.retries"
 
-# Watchdog: SIGTERM after timeout, SIGKILL after 30s grace
-(sleep $TIMEOUT_SECS && kill -TERM $TASK_PID 2>/dev/null \
-  && sleep 30 && kill -KILL $TASK_PID 2>/dev/null) &
+# Watchdog: SIGTERM after timeout, SIGKILL after 30s grace. nohup'd (via a
+# positional-arg bash -c, to dodge quoting issues) so it survives the calling
+# terminal/session closing — a bare backgrounded subshell is not guaranteed to.
+nohup bash -c 'sleep "$1"; kill -TERM "$2" 2>/dev/null; sleep 30; kill -KILL "$2" 2>/dev/null' \
+  _ "$TIMEOUT_SECS" "$TASK_PID" > /dev/null 2>&1 &
 echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```
 

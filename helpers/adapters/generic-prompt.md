@@ -143,9 +143,9 @@ nohup agy --print "Read $(pwd)/.delegate/tasks/TASK-N.md and execute." --add-dir
 echo $! > .delegate/tasks/TASK-N.pid
 ```
 
-Set watchdog (replace PID and TIMEOUT):
+Set watchdog (replace PID and TIMEOUT). nohup'd so it survives the calling terminal/session closing — a bare backgrounded subshell is not guaranteed to:
 ```
-(sleep <TIMEOUT> && kill -TERM <PID> 2>/dev/null && sleep 30 && kill -KILL <PID> 2>/dev/null) &
+nohup bash -c 'sleep "$1"; kill -TERM "$2" 2>/dev/null; sleep 30; kill -KILL "$2" 2>/dev/null' _ <TIMEOUT> <PID> > /dev/null 2>&1 &
 echo $! > .delegate/tasks/TASK-N.watchdog.pid
 ```
 

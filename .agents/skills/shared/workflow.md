@@ -2,7 +2,9 @@
 
 Shared workflow for all `delegate-to-*` skills. Each skill's `SKILL.md` references this document and adds its own Step 4 (runtime-specific launch logic).
 
-The user's task description is available as `$ARGUMENTS` — it is substituted into the skill body's `## Task` section before the workflow runs. Reference it throughout this workflow wherever the task description is needed (handoff document, TODO.md title, worktree naming).
+The user's task description is available as `$ARGUMENTS` — it is substituted into the skill body's `## Task` section before the workflow runs. Reference it throughout this workflow wherever the task description is needed (handoff document, TODO.md title, worktree naming). Not every agentskills.io-compliant host performs this substitution — if the `## Task` section still literally reads `$ARGUMENTS` when you read it, treat the user's original request text as the task description instead of proceeding with the literal string.
+
+**Prefer `scripts/delegate.sh` throughout this workflow whenever it exists in the project.** It handles exit-code capture (not just "the process is gone"), safe process-tree termination (won't kill an unrelated process that reuses a PID), and self-cancelling watchdogs — mechanics that are hard to replicate reliably in prose executed live by a model. Steps below call this out at each point it applies; where `scripts/delegate.sh` is absent, fall back to the manual instructions given.
 
 ---
 
@@ -24,6 +26,14 @@ This guardrail prevents wasted work: a missing binary is caught in one shell com
 ---
 
 ## Step 0: Git Preflight
+
+**If `scripts/delegate.sh` is present**, check for orphaned work from a prior session first — if the AI session that launched a task crashed or was closed before it could review completion, that task's `TODO.md` entry stays `in_progress` forever, with an `owner` that will never come back to clear it:
+
+```bash
+bash scripts/delegate.sh reconcile
+```
+
+For each `STALE TASK-N ...` line reported, update that block in `TODO.md`: change `status: in_progress` to `status: stale`, clear the `owner` field, and add a one-line note. This is a normal in-place field update (allowed under the append-only rule — see TODO.md Conventions below), not a new block. A `stale` task's work is still on disk in its worktree and resumable via `--continue` in a future delegation.
 
 ```bash
 git status --short
@@ -55,6 +65,15 @@ If there are tests in this project, run them once before proceeding and record w
 ## Step 1: Update TODO.md
 
 `TODO.md` lives at the project root and is the shared ledger for all agents. Create it if it doesn't exist. Append a new block — never edit or delete existing blocks.
+
+**If `scripts/delegate.sh` is present, use it to allocate the task number** — it takes an `mkdir`-based lock around the read-and-increment so two concurrent delegations can't both compute the same `TASK-N` (see the "TODO.md has no lock" note at the bottom of this document):
+
+```bash
+TASK_N_LABEL=$(bash scripts/delegate.sh next-id)   # e.g. "TASK-7"
+TASK_N="${TASK_N_LABEL#TASK-}"                     # numeric part, for the arithmetic/paths below
+```
+
+**Otherwise**, compute it manually (not lock-protected — safe for a single caller, not for concurrent ones):
 
 ```bash
 # Take the highest existing task number across TODO.md and TODO-ARCHIVE.md
@@ -148,7 +167,15 @@ mkdir -p .delegate/tasks .delegate/worktrees
 <mirror the active_form from TODO.md — what mid-task progress looks like>
 
 ## Verification Expectations
-<exact done criteria — test commands to run, outputs to check, files to verify>
+<exact done criteria — test commands to run, outputs to check, files to verify. Where possible, express this as
+a fenced ```bash block — `scripts/delegate.sh verify TASK-N` (see Step 5, Case 4) runs it mechanically and
+reports PASS/FAIL with the real exit code, instead of a reviewing model having to interpret prose criteria.>
+
+```bash
+# example — replace with the real commands for this task
+npm test
+test -f src/models/user.ts
+```
 
 ## Git State
 - base_branch: <current branch>
@@ -180,6 +207,16 @@ Each skill defines:
 ## Step 5: Periodic Review + Self-Healing
 
 Poll at roughly 20% of the timeout interval (e.g. every 2 min on a 10 min task, every 6 min on a 30 min task). On **each** review cycle, run the full decision tree below in order.
+
+**If `scripts/delegate.sh` is present, check liveness with it instead of the manual commands in part A**:
+
+```bash
+bash scripts/delegate.sh status TASK-N
+```
+
+This prints `STATE=RUNNING`, `STATE=STALLED`, `STATE=EXITED_OK`, `STATE=EXITED_FAILED` (with `EXITCODE=`), `STATE=LAUNCH_FAILED`, or `STATE=NOT_FOUND`, plus `LOG_SIZE=` and `RETRIES=`. It's a stronger signal than the manual liveness check below in three ways: `STALLED` cross-checks log growth against filesystem activity in the worktree (a healthy agent doing a long silent compile won't be misread as stuck), `EXITED_FAILED` carries the agent's *real* exit code (captured by the supervisor process that launched it, not inferred from "the process is gone"), and none of it risks signaling the wrong process — the PID it reports has already been verified against a fingerprint recorded at launch. Map its `STATE=` directly onto the cases below (`RUNNING`→Case 5, `STALLED`→Case 2, `LAUNCH_FAILED`→Case 1, `EXITED_OK`/`EXITED_FAILED`→Case 3 or 4 depending on whether `output_ref` exists) and skip part A entirely.
+
+**Otherwise**, check liveness manually:
 
 ### A. Check liveness
 
@@ -240,7 +277,13 @@ The process ran to completion but the expected `output_ref` file(s) don't exist.
 
 #### Case 4 — Process exited, output present → verify
 
-Run the verification commands from the handoff document:
+**If `scripts/delegate.sh` is present and the handoff document's `## Verification Expectations` section contains a fenced ```` ```bash ```` block**, run it mechanically instead of interpreting the section as prose:
+```bash
+bash scripts/delegate.sh verify TASK-N
+```
+This prints `STATE=PASS` or `STATE=FAIL` (with `EXITCODE=`) and the log path, and exits with the block's own exit code. Write handoff verification sections as an executable block (see Step 3) precisely so this is possible — it turns "completed only when verification passes" from a judgment call into something enforceable the same way regardless of which host tool is running this workflow.
+
+**Otherwise**, run the verification commands from the handoff document by hand:
 - File existence checks
 - Content checks (grep for expected symbols/exports)
 - Compile/test commands if applicable
@@ -253,7 +296,8 @@ Run the verification commands from the handoff document:
 ```
 Check off sub-tasks: `- [x] <sub-task>`
 Clear the `owner` field.
-**Cancel the watchdog** — it is still sleeping and would otherwise fire at the timeout, targeting a PID that may by then belong to an unrelated process (PID reuse):
+
+**Cancel the watchdog** — needed only on the manual/fallback launch path. When `scripts/delegate.sh` launched the task, its supervisor process cancels its own timer the instant the agent exits (see `helpers/scripts/delegate.sh`'s header comments) — there is nothing to do here. On the manual path, the watchdog subshell from Step 4 is still sleeping and would otherwise fire at the timeout, targeting a PID that may by then belong to an unrelated process (PID reuse):
 ```bash
 WATCHDOG=$(cat ".delegate/tasks/TASK-N.watchdog.pid" 2>/dev/null)
 kill "$WATCHDOG" 2>/dev/null
@@ -277,6 +321,9 @@ No action needed. Note the current log size and schedule the next poll.
 
 ### On timeout (watchdog fires or poll interval exceeded)
 
+When `scripts/delegate.sh` launched the task, this already happened automatically — its supervisor races a timer against natural completion and sends SIGTERM then SIGKILL to the agent's real process tree (never an unrelated process that happens to reuse the PID). Nothing to do here but check `bash scripts/delegate.sh status TASK-N` for the outcome.
+
+On the manual path:
 ```bash
 PID=$(cat .delegate/tasks/TASK-N.pid)
 WATCHDOG=$(cat .delegate/tasks/TASK-N.watchdog.pid 2>/dev/null)
@@ -298,4 +345,4 @@ Mark `status: timed_out`. Preserve the log and all files the agent wrote — par
 - `depends_on` lists task IDs whose outputs this task needs — agents skip tasks with incomplete dependencies
 - A task is `completed` only when verification expectations are explicitly confirmed, not just when the process exits
 - Checkpoint at natural phase boundaries (after each file group, after each test run) by updating sub-task checkboxes
-- **TODO.md has no lock.** Two concurrent delegations running Step 1 at the same instant can read the same max task number and pick the same `TASK-N`, corrupting the ledger. For parallel delegation from a single caller, assign task IDs sequentially *before* launching in parallel. For parallel callers, serialize the "pick next ID + append block" step (e.g. via `flock TODO.md` on systems that support it), or pre-allocate a block of IDs.
+- **TODO.md has no lock of its own.** Two concurrent delegations running Step 1's manual computation at the same instant can read the same max task number and pick the same `TASK-N`, corrupting the ledger. `bash scripts/delegate.sh next-id` (see Step 1) closes this with an `mkdir`-based lock — portable to every platform this repo targets, including Windows, unlike `flock` — and self-heals a lock left behind by a crashed process after 30 seconds. Prefer it over the manual computation whenever `scripts/delegate.sh` is present. Without it: for parallel delegation from a single caller, assign task IDs sequentially *before* launching in parallel; for parallel callers, serialize the "pick next ID + append block" step some other way, or pre-allocate a block of IDs.
