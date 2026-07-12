@@ -5,6 +5,48 @@ the `metadata.version` field in each skill's `SKILL.md`.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.4] — 2026-07-12
+
+### Fixed
+
+- **empty-directory fallback** (`helpers/scripts/delegate.sh`): when the project
+  was not a git repo or `git worktree add` failed, the script created an empty
+  plain directory under `.delegate/worktrees/` and launched the agent inside it
+  — with zero project files to work on. It now falls back to the project root
+  (matching what `skills/shared/workflow.md` and every SKILL.md already
+  specified). Behavior test updated to assert the root fallback.
+- **codex watchdog killed the wrapper, not codex** (`delegate.sh`,
+  `skills/delegate-to-codex/SKILL.md`, `helpers/adapters/generic-prompt.md`):
+  the launch wrapped the stdin pipeline in a backgrounded `bash -c` string, so
+  `$!` captured the wrapper shell's PID. SIGTERM to that shell does not
+  propagate to the piped codex child, so timeouts and stall-kills left codex
+  running. Restructured so codex is the last element of the backgrounded
+  pipeline — `$!` is now codex's own PID. Behavior test now asserts the
+  recorded PID matches the codex process; structure test forbids the wrapper.
+- **deprecated opencode flag preferred over current one** (`delegate.sh`,
+  `skills/delegate-to-opencode/SKILL.md`, `generic-prompt.md`): auto-approval
+  flag detection checked `--auto` first and let `--dangerously-skip-permissions`
+  overwrite it, so a version supporting both got the deprecated flag. Order
+  swapped so `--auto` wins.
+- **unquoted flag strings broke on paths with spaces** (`delegate.sh` mimo
+  branch, `skills/delegate-to-mimo/SKILL.md`, omo block in
+  `skills/delegate-to-opencode/SKILL.md`): flags built as flat strings
+  (`MIMO_DIR_FLAG="--dir $WORK_DIR"`) word-split on spaces in the project path.
+  Now built as bash arrays with the `${arr[@]+...}` expansion (safe under
+  `set -u` on bash 3.2).
+- **task-ID allocation by block count** (`skills/shared/workflow.md`,
+  `helpers/adapters/generic-prompt.md`, `helpers/hermes/delegate-tasks/SKILL.md`):
+  the next TASK-N was derived by counting `## [TASK-` blocks, which collides
+  with a surviving task if any block was ever removed. Now takes the highest
+  existing task number across `TODO.md` and `TODO-ARCHIVE.md` and adds 1.
+
+### Added
+
+- **`.agents/skills/` mirror committed and parity-tested**: the agentskills.io
+  project-level mirror was maintained locally (the 1.2.3 notes reference it) but
+  never committed. It is now tracked, and a structure test fails whenever
+  `diff -r skills .agents/skills` is non-empty.
+
 ## [1.2.3] — 2026-07-04
 
 ### Fixed

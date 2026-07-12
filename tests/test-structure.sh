@@ -56,6 +56,14 @@ done
   && fail "docs/workflow.md should not exist (belongs in skills/shared/)" \
   || pass "docs/workflow.md correctly absent (it lives in skills/shared/)"
 
+# .agents/skills/ is the agentskills.io project-level mirror of skills/ —
+# the two must stay in lockstep or installs from one drift from the other.
+if diff -r "$PROJECT_ROOT/skills" "$PROJECT_ROOT/.agents/skills" >/dev/null 2>&1; then
+  pass ".agents/skills/ mirror is in sync with skills/"
+else
+  fail ".agents/skills/ mirror differs from skills/ (sync with: rm -rf .agents/skills && cp -r skills .agents/skills)"
+fi
+
 # ─── docs/ — documentation only ───────────────────────────────────────────────
 
 for f in docs/usage.md docs/install.md; do
@@ -440,15 +448,20 @@ yaml.safe_load(parts[1])
       grep -q "command -v codex" "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md detects codex binary" \
         || fail "skills/$skill/SKILL.md missing 'command -v codex' detection"
-      grep -q "_CODEX_TASK_FILE" "$SKILL_FILE" \
-        && pass "skills/$skill/SKILL.md delivers handoff via stdin (_CODEX_TASK_FILE)" \
+      grep -q 'cat "$TASK_FILE"' "$SKILL_FILE" \
+        && pass "skills/$skill/SKILL.md delivers handoff via stdin (cat \$TASK_FILE)" \
         || fail "skills/$skill/SKILL.md missing stdin handoff delivery"
       grep -q -- "--dangerously-bypass-approvals-and-sandbox" "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md uses --dangerously-bypass-approvals-and-sandbox" \
         || fail "skills/$skill/SKILL.md missing --dangerously-bypass-approvals-and-sandbox"
-      grep -q "_CODEX_WORK_DIR" "$SKILL_FILE" \
-        && pass "skills/$skill/SKILL.md exports _CODEX_WORK_DIR env var" \
-        || fail "skills/$skill/SKILL.md missing _CODEX_WORK_DIR env var"
+      # codex must be the LAST pipeline element so $! is codex's own PID —
+      # a bash -c wrapper PID doesn't forward SIGTERM to the piped codex child.
+      grep -q "nohup codex exec" "$SKILL_FILE" \
+        && pass "skills/$skill/SKILL.md launches codex as last pipeline element (nohup codex exec)" \
+        || fail "skills/$skill/SKILL.md must launch via 'nohup codex exec' as last pipeline element"
+      grep -q "nohup bash -c" "$SKILL_FILE" \
+        && fail "skills/$skill/SKILL.md wraps codex in 'nohup bash -c' — \$! would be the wrapper PID" \
+        || pass "skills/$skill/SKILL.md avoids bash -c wrapper (watchdog targets codex itself)"
       grep -q "exec resume --last\|resume.*--last" "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md retry uses 'codex exec resume --last'" \
         || fail "skills/$skill/SKILL.md retry missing 'exec resume --last'"

@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and opencode or oh-my-opencode on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.2.3
+  version: 1.2.4
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -53,12 +53,12 @@ opencode run --help 2>&1 | grep -E "variant|effort"
 # 'effort' not present → never use it
 ```
 
-**Auto-approval flag** — required for unattended background runs. The flag name has changed across opencode versions (`--dangerously-skip-permissions` was replaced by `--auto` as of v1.17.x) — never hardcode one, detect it:
+**Auto-approval flag** — required for unattended background runs. The flag name has changed across opencode versions (`--dangerously-skip-permissions` was replaced by `--auto` as of v1.17.x) — never hardcode one, detect it. Check the deprecated flag first so `--auto` wins when a version supports both:
 ```bash
 OPENCODE_HELP=$(opencode run --help 2>&1)
 OPENCODE_AUTO_FLAG=""
-echo "$OPENCODE_HELP" | grep -q -- "--auto" && OPENCODE_AUTO_FLAG="--auto"
 echo "$OPENCODE_HELP" | grep -q -- "--dangerously-skip-permissions" && OPENCODE_AUTO_FLAG="--dangerously-skip-permissions"
+echo "$OPENCODE_HELP" | grep -q -- "--auto" && OPENCODE_AUTO_FLAG="--auto"
 # If neither is present, omit the flag — the run may then block on interactive prompts.
 ```
 
@@ -107,26 +107,25 @@ TIMEOUT_SECS=<seconds from timeout tier>
 
 # Help-check both flags — omo may support --file and/or --dir (varies by version).
 # If --dir is unsupported, fall back to cd so the agent still runs in the worktree.
+# Build args as an ARRAY — a flat string like "--file $PROJECT_ROOT/..." word-splits
+# on spaces in the path. ${arr[@]+...} keeps an empty array safe under `set -u`.
 OMO_HELP=$(oh-my-opencode run --help 2>&1)
-OMO_FILE_FLAG=""
-echo "$OMO_HELP" | grep -q "\-\-file" && OMO_FILE_FLAG="--file $PROJECT_ROOT/.delegate/tasks/TASK-N.md"
-OMO_DIR_FLAG=""
-echo "$OMO_HELP" | grep -q "\-\-dir" && OMO_DIR_FLAG="--dir $WORK_DIR"
+OMO_ARGS=() ; OMO_HAS_DIR=""
+echo "$OMO_HELP" | grep -q "\-\-file" && OMO_ARGS+=(--file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md")
+echo "$OMO_HELP" | grep -q "\-\-dir" && { OMO_HAS_DIR=1; OMO_ARGS+=(--dir "$WORK_DIR"); }
 
-if [ -n "$OMO_DIR_FLAG" ]; then
+if [ -n "$OMO_HAS_DIR" ]; then
   # --dir supported: pass it directly (no cd needed)
-  # shellcheck disable=SC2086
   nohup oh-my-opencode run \
     "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
-    $OMO_FILE_FLAG \
-    $OMO_DIR_FLAG \
+    ${OMO_ARGS[@]+"${OMO_ARGS[@]}"} \
     --yes \
     > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 else
   # No --dir flag: cd into the worktree so isolation still holds.
   cd "$WORK_DIR" && nohup oh-my-opencode run \
     "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
-    $OMO_FILE_FLAG \
+    ${OMO_ARGS[@]+"${OMO_ARGS[@]}"} \
     --yes \
     > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 fi

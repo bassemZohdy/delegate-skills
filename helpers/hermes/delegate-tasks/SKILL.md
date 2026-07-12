@@ -1,7 +1,7 @@
 ---
 name: delegate-tasks
 description: "Delegate long-running coding tasks to a background agent CLI (opencode, pi, mimo, hermes, kimi, codex, agy) with git worktree isolation, structured handoff documents, and progress monitoring."
-version: 1.2.0
+version: 1.2.4
 author: delegate-skills
 license: MIT
 platforms: [linux, macos, windows]
@@ -61,10 +61,10 @@ terminal(command="<project test command, e.g. npm test or pytest>", workdir="<pr
 ### Step 1 — Determine Next Task Number
 
 ```
-terminal(command="grep -ch '^## \\[TASK-' TODO.md TODO-ARCHIVE.md 2>/dev/null | awk '{s+=$1} END {print s+0}'", workdir="<project>")
+terminal(command="grep -h '^## \\[TASK-' TODO.md TODO-ARCHIVE.md 2>/dev/null | sed -E 's/^## \\[TASK-([0-9]+)\\].*/\\1/' | sort -n | tail -1", workdir="<project>")
 ```
 
-Increment by 1. Use `TASK-<N>` (e.g. `TASK-1`) throughout. Checking `TODO-ARCHIVE.md` too matters if completed tasks have been archived out of `TODO.md` — otherwise a reused TASK-N would collide with archived history.
+Add 1 to the result (empty output → start at 1). Use `TASK-<N>` (e.g. `TASK-1`) throughout. Taking the MAX across both files matters: archived tasks live in `TODO-ARCHIVE.md`, and a count-based ID would collide with surviving tasks if any block was ever removed.
 
 ---
 

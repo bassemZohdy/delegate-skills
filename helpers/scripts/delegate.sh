@@ -77,16 +77,18 @@ mkdir -p "$TASKS_DIR"
 
 # ── Worktree ───────────────────────────────────────────────────────────────────
 
+# Fall back to the project root when isolation isn't possible — the agent must
+# see the actual code. An empty plain directory would give it nothing to work on.
 if git rev-parse --git-dir &>/dev/null && git rev-parse HEAD &>/dev/null; then
   BRANCH="${RUNTIME}/${TASK_ID}"
   if [ ! -d "$WORK_DIR" ]; then
     git worktree add "$WORK_DIR" -b "$BRANCH" 2>/dev/null || \
       git worktree add "$WORK_DIR" "$BRANCH" 2>/dev/null || \
-      { mkdir -p "$WORK_DIR"; echo "WARN: worktree fallback to plain directory" >&2; }
+      { WORK_DIR="$PROJECT_ROOT"; echo "WARN: worktree creation failed — running in project root without isolation" >&2; }
   fi
 else
-  mkdir -p "$WORK_DIR"
-  echo "WARN: not a git repo — worktree isolation skipped" >&2
+  WORK_DIR="$PROJECT_ROOT"
+  echo "WARN: not a git repo — worktree isolation skipped, running in project root" >&2
 fi
 
 # ── Launch ─────────────────────────────────────────────────────────────────────
@@ -96,10 +98,11 @@ case "$RUNTIME" in
   opencode)
     # Flag name has changed across opencode versions (--dangerously-skip-permissions
     # was replaced by --auto as of v1.17.x) — detect instead of hardcoding.
+    # Check the deprecated flag first so --auto wins when a version supports both.
     OPENCODE_HELP=$(opencode run --help 2>&1)
     OPENCODE_AUTO=""
-    echo "$OPENCODE_HELP" | grep -q -- "--auto" && OPENCODE_AUTO="--auto"
     echo "$OPENCODE_HELP" | grep -q -- "--dangerously-skip-permissions" && OPENCODE_AUTO="--dangerously-skip-permissions"
+    echo "$OPENCODE_HELP" | grep -q -- "--auto" && OPENCODE_AUTO="--auto"
     # shellcheck disable=SC2086
     nohup opencode run "Execute the task in the handoff document." \
       --file "$TASK_FILE" \
@@ -121,22 +124,25 @@ case "$RUNTIME" in
     ;;
 
   mimo)
+    # Build args as an array so paths containing spaces survive expansion
+    # (a flat string like "--dir $WORK_DIR" word-splits on the space).
+    # The ${arr[@]+...} expansion keeps empty arrays safe under `set -u`
+    # on bash 3.2 (macOS default).
     MIMO_HELP=$(mimo run --help 2>&1)
-    MIMO_SKIP="" ; MIMO_DIR="" ; MIMO_FILE=""
+    MIMO_ARGS=() ; MIMO_HAS_FILE=""
+    echo "$MIMO_HELP" | grep -q -- "--file" && \
+      { MIMO_HAS_FILE=1; MIMO_ARGS+=(--file "$TASK_FILE"); }
+    echo "$MIMO_HELP" | grep -q -- "--dir"  && MIMO_ARGS+=(--dir "$WORK_DIR")
     echo "$MIMO_HELP" | grep -q "dangerously-skip-permissions" && \
-      MIMO_SKIP="--dangerously-skip-permissions"
-    echo "$MIMO_HELP" | grep -q -- "--dir"  && MIMO_DIR="--dir $WORK_DIR"
-    echo "$MIMO_HELP" | grep -q -- "--file" && MIMO_FILE="--file $TASK_FILE"
-    if [ -n "$MIMO_FILE" ]; then
-      # shellcheck disable=SC2086
-      nohup mimo run "Execute the handoff task." $MIMO_FILE $MIMO_DIR $MIMO_SKIP \
+      MIMO_ARGS+=(--dangerously-skip-permissions)
+    if [ -n "$MIMO_HAS_FILE" ]; then
+      nohup mimo run "Execute the handoff task." ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"} \
         > "$LOG_FILE" 2>&1 &
     else
       # No --file flag: cd into the worktree so isolation holds. Same reason
       # as pi — $! must be the agent, not a subshell.
       cd "$WORK_DIR"
-      # shellcheck disable=SC2086
-      nohup mimo run "Read $TASK_FILE and execute the task." $MIMO_DIR $MIMO_SKIP \
+      nohup mimo run "Read $TASK_FILE and execute the task." ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"} \
         > "$LOG_FILE" 2>&1 &
     fi
     TASK_PID=$!
@@ -163,14 +169,18 @@ case "$RUNTIME" in
     ;;
 
   codex)
-    export _CODEX_TASK_FILE="$TASK_FILE"
-    export _CODEX_WORK_DIR="$WORK_DIR"
-    nohup bash -c \
-      '{ printf "%s\n\n" "Execute the task described in the handoff document below. Follow all instructions in it exactly."; cat "$_CODEX_TASK_FILE"; } | codex exec -C "$_CODEX_WORK_DIR" \
+    # codex must be the LAST element of the backgrounded pipeline: $! is the PID
+    # of the last pipeline command, so this makes the watchdog and liveness
+    # checks target codex itself. (A previous `nohup bash -c '... | codex ...'`
+    # wrapper captured the bash PID instead — SIGTERM to bash does not propagate
+    # to the piped codex child, so timeouts left codex running.)
+    { printf '%s\n\n' "Execute the task described in the handoff document below. Follow all instructions in it exactly."; \
+      cat "$TASK_FILE"; } | \
+      nohup codex exec -C "$WORK_DIR" \
         -s danger-full-access \
         --dangerously-bypass-approvals-and-sandbox \
-        -' \
-      > "$LOG_FILE" 2>&1 &
+        - \
+        > "$LOG_FILE" 2>&1 &
     TASK_PID=$!
     ;;
 

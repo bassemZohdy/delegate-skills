@@ -57,11 +57,13 @@ If there are tests in this project, run them once before proceeding and record w
 `TODO.md` lives at the project root and is the shared ledger for all agents. Create it if it doesn't exist. Append a new block — never edit or delete existing blocks.
 
 ```bash
-# Count blocks in both TODO.md and TODO-ARCHIVE.md (if present) — completed
-# tasks may have been archived out of TODO.md, and reusing an already-used
-# TASK-N would collide with that history.
-LAST_N=$(grep -ch '^## \[TASK-' TODO.md TODO-ARCHIVE.md 2>/dev/null | awk '{s+=$1} END {print s+0}')
-TASK_N=$((LAST_N + 1))
+# Take the highest existing task number across TODO.md and TODO-ARCHIVE.md
+# (completed tasks may have been archived out of TODO.md) and add 1. Using the
+# MAX rather than a block count matters: if any block was ever removed despite
+# the append-only rule, a count-based ID would collide with a surviving task.
+LAST_N=$(grep -h '^## \[TASK-' TODO.md TODO-ARCHIVE.md 2>/dev/null \
+  | sed -E 's/^## \[TASK-([0-9]+)\].*/\1/' | sort -n | tail -1)
+TASK_N=$(( ${LAST_N:-0} + 1 ))
 ```
 
 ```markdown
@@ -296,4 +298,4 @@ Mark `status: timed_out`. Preserve the log and all files the agent wrote — par
 - `depends_on` lists task IDs whose outputs this task needs — agents skip tasks with incomplete dependencies
 - A task is `completed` only when verification expectations are explicitly confirmed, not just when the process exits
 - Checkpoint at natural phase boundaries (after each file group, after each test run) by updating sub-task checkboxes
-- **TODO.md has no lock.** Two concurrent delegations running Step 1 (`grep -c '^## [TASK-'`) at the same instant can read the same count and pick the same `TASK-N`, corrupting the ledger. For parallel delegation from a single caller, assign task IDs sequentially *before* launching in parallel. For parallel callers, serialize the "pick next ID + append block" step (e.g. via `flock TODO.md` on systems that support it), or pre-allocate a block of IDs.
+- **TODO.md has no lock.** Two concurrent delegations running Step 1 at the same instant can read the same max task number and pick the same `TASK-N`, corrupting the ledger. For parallel delegation from a single caller, assign task IDs sequentially *before* launching in parallel. For parallel callers, serialize the "pick next ID + append block" step (e.g. via `flock TODO.md` on systems that support it), or pre-allocate a block of IDs.

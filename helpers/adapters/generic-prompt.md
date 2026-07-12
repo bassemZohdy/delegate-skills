@@ -26,8 +26,8 @@ Run: `git status --short && git rev-parse HEAD && git branch --show-current`
 - Record the base SHA for the handoff document.
 
 ### Step 1 — Determine Task ID
-Run: `grep -ch '^## \[TASK-' TODO.md TODO-ARCHIVE.md 2>/dev/null | awk '{s+=$1} END {print s+0}'`
-Increment by 1. Use TASK-N (e.g. TASK-1) everywhere below. Checking `TODO-ARCHIVE.md` too matters if completed tasks have been archived out of `TODO.md` — otherwise a reused TASK-N would collide with archived history.
+Run: `grep -h '^## \[TASK-' TODO.md TODO-ARCHIVE.md 2>/dev/null | sed -E 's/^## \[TASK-([0-9]+)\].*/\1/' | sort -n | tail -1`
+Add 1 to the result (empty output → start at 1). Use TASK-N (e.g. TASK-1) everywhere below. Taking the MAX across both files matters: archived tasks live in `TODO-ARCHIVE.md`, and a count-based ID would collide with surviving tasks if any block was ever removed.
 
 ### Step 2 — Write TODO.md Entry
 Append to TODO.md (create if absent):
@@ -97,8 +97,8 @@ PROJECT_ROOT="$(pwd)"
 # --dir points opencode's cwd at the worktree, so --file must be absolute or it
 # won't resolve. Auto-approval flag name varies by version — detect it:
 OPENCODE_AUTO=""
-opencode run --help 2>&1 | grep -q -- "--auto" && OPENCODE_AUTO="--auto"
 opencode run --help 2>&1 | grep -q -- "--dangerously-skip-permissions" && OPENCODE_AUTO="--dangerously-skip-permissions"
+opencode run --help 2>&1 | grep -q -- "--auto" && OPENCODE_AUTO="--auto"
 nohup opencode run "Execute handoff." --file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md" --dir "$PROJECT_ROOT/.delegate/worktrees/TASK-N" $OPENCODE_AUTO > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
 ```
@@ -113,13 +113,13 @@ echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
 
 **codex:**
 ```
-export _CODEX_TASK_FILE="$(pwd)/.delegate/tasks/TASK-N.md"
-export _CODEX_WORK_DIR="$(pwd)/.delegate/worktrees/TASK-N"
-nohup bash -c '{ printf "%s\n\n" "Execute the task described in the handoff document below. Follow all instructions in it exactly."; cat "$_CODEX_TASK_FILE"; } | codex exec -C "$_CODEX_WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox -' > .delegate/tasks/TASK-N.log 2>&1 &
+TASK_FILE="$(pwd)/.delegate/tasks/TASK-N.md"
+WORK_DIR="$(pwd)/.delegate/worktrees/TASK-N"
+{ printf '%s\n\n' "Execute the task described in the handoff document below. Follow all instructions in it exactly."; cat "$TASK_FILE"; } | nohup codex exec -C "$WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox - > .delegate/tasks/TASK-N.log 2>&1 &
 echo $! > .delegate/tasks/TASK-N.pid
 ```
 
-> The `printf` framing is mandatory — piping the raw handoff risks Codex treating it as content to discuss rather than a task to execute.
+> The `printf` framing is mandatory — piping the raw handoff risks Codex treating it as content to discuss rather than a task to execute. Keep codex as the LAST element of the backgrounded pipeline: `$!` is the last pipeline command's PID, so this makes the watchdog target codex itself rather than a wrapper shell.
 
 **hermes:**
 ```

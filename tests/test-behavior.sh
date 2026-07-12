@@ -531,6 +531,12 @@ test_codex_stdin_framing() {
 
   # Check marker
   grep -q "$unique_marker" "$SANDBOX/mockout/codex.stdin" || return 1
+
+  # The recorded PID must be codex's OWN pid, not a wrapper shell's — otherwise
+  # the watchdog's SIGTERM never reaches codex (bash doesn't forward it to
+  # pipeline children).
+  wait_for_mock_file "$SANDBOX/mockout/codex.pid" || return 1
+  [ "$(cat "$SANDBOX/.delegate/tasks/TASK-10.pid")" = "$(cat "$SANDBOX/mockout/codex.pid")" ] || return 1
 }
 
 # ─── Test 11: agy — no-cd, --add-dir behavior ──────────────────────────
@@ -660,9 +666,10 @@ test_not_git_repo() {
   chmod +x "$SANDBOX/bin/opencode"
 
   # Run
+  mkdir -p "$SANDBOX/mockout"
   cd "$SANDBOX"
   local tempfile=$SANDBOX/test_out.txt
-  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 bash "$DELEGATE_SH" opencode TASK-14 30 < /dev/null > "$tempfile" 2>&1
+  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" opencode TASK-14 30 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
   snapshot_watchdog_children "$SANDBOX"
 
@@ -671,8 +678,16 @@ test_not_git_repo() {
   # Check warning
   grep -q "not a git repo" "$tempfile" || return 1
 
-  # Check worktree exists
-  [ -d "$SANDBOX/.delegate/worktrees/TASK-14" ] || return 1
+  # Must fall back to the PROJECT ROOT, not an empty plain directory — an
+  # agent launched in a blank worktrees/TASK-14 dir would see no project files.
+  grep -q "^WORK_DIR=" "$tempfile" || return 1
+  grep "^WORK_DIR=" "$tempfile" | grep -q "worktrees/TASK-14" && return 1
+  [ -d "$SANDBOX/.delegate/worktrees/TASK-14" ] && return 1
+
+  # The mock must have received --dir pointing at the project root
+  wait_for_mock_file "$SANDBOX/mockout/opencode.args" || return 1
+  grep -A1 -- "--dir" "$SANDBOX/mockout/opencode.args" | grep -q "worktrees/TASK-14" && return 1
+  return 0
 }
 
 # ─── Test 15: Worktree reuse ──────────────────────────────────────────
@@ -766,7 +781,7 @@ test_codex_stdin_framing && pass "codex — stdin framing" || fail "codex — st
 test_agy_add_dir && pass "agy — no-cd, \`--add-dir\` behavior" || fail "agy — no-cd, \`--add-dir\` behavior"
 test_hermes_absolute_path && pass "hermes — cd + absolute path in prompt" || fail "hermes — cd + absolute path in prompt"
 test_kimi_absolute_path && pass "kimi — cd + absolute path in prompt" || fail "kimi — cd + absolute path in prompt"
-test_not_git_repo && pass "Not a git repo → fallback to plain directory" || fail "Not a git repo → fallback to plain directory"
+test_not_git_repo && pass "Not a git repo → fallback to project root" || fail "Not a git repo → fallback to project root"
 test_worktree_reuse && pass "Worktree reuse — second launch for same TASK-N" || fail "Worktree reuse — second launch for same TASK-N"
 test_watchdog_sigterm && pass "Watchdog SIGTERM fires on timeout" || fail "Watchdog SIGTERM fires on timeout"
 

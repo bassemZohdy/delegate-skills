@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and mimo on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.2.3
+  version: 1.2.4
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -73,21 +73,17 @@ WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
 
 TIMEOUT_SECS=<seconds from timeout tier>
 
-# Build flags from confirmed support (checked above)
-MIMO_DIR_FLAG=""
-[ "$MIMO_HAS_DIR" -gt 0 ] && MIMO_DIR_FLAG="--dir $WORK_DIR"
-
-MIMO_SKIP_FLAG=""
-[ "$MIMO_HAS_SKIP" -gt 0 ] && MIMO_SKIP_FLAG="--dangerously-skip-permissions"
-
-MIMO_FILE_FLAG=""
-[ "$MIMO_HAS_FILE" -gt 0 ] && MIMO_FILE_FLAG="--file $PROJECT_ROOT/.delegate/tasks/TASK-N.md"
+# Build flags from confirmed support (checked above) as an ARRAY — a flat
+# string like "--dir $WORK_DIR" word-splits on spaces in the path. The
+# ${arr[@]+...} expansion keeps an empty array safe under `set -u` on bash 3.2.
+MIMO_ARGS=()
+[ "$MIMO_HAS_FILE" -gt 0 ] && MIMO_ARGS+=(--file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md")
+[ "$MIMO_HAS_DIR" -gt 0 ] && MIMO_ARGS+=(--dir "$WORK_DIR")
+[ "$MIMO_HAS_SKIP" -gt 0 ] && MIMO_ARGS+=(--dangerously-skip-permissions)
 
 nohup mimo run \
   "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
-  $MIMO_FILE_FLAG \
-  $MIMO_DIR_FLAG \
-  $MIMO_SKIP_FLAG \
+  ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"} \
   > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 
 TASK_PID=$!
@@ -114,13 +110,11 @@ Tell the user: task ID, working directory, timeout deadline.
 
 ### Retry (Step 5 Case 2)
 
-When self-healing retries with `--continue` (reuse `$PROJECT_ROOT`, `$WORK_DIR`, and `$MIMO_*_FLAG` variables from launch):
+When self-healing retries with `--continue` (reuse `$PROJECT_ROOT`, `$WORK_DIR`, and the `MIMO_ARGS` array from launch):
 ```bash
 nohup mimo run \
   "Continue the task from where you left off." \
-  $MIMO_FILE_FLAG \
-  $MIMO_DIR_FLAG \
   --continue \
-  $MIMO_SKIP_FLAG \
+  ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"} \
   > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 ```
