@@ -24,7 +24,7 @@ This repository contains **skill files** conforming to the [agentskills.io open 
 | Gemini CLI | ✅ Takes precedence over `~/.gemini/skills/` | |
 | Kimi Code CLI | ✅ "Generic group" path | Also scans `~/.config/agents/skills/` |
 | Claude Code | ⚠️ Uses `~/.claude/skills/` primarily | May vary by version; install to both to be safe |
-| Hermes Agent | ⚠️ Requires explicit config | Add `~/.agents/skills` to `external_dirs` in `~/.hermes/config.yaml` |
+| Hermes Agent | ⚠️ Requires explicit config | Add `~/.agents/skills` to `external_dirs` in `$HERMES_HOME/config.yaml` (see Hermes section for path) |
 | mimo | ❓ Not confirmed | Install directly via mimo's own skills path |
 | agy | ❓ Not confirmed | Install directly via agy's own skills path |
 
@@ -151,7 +151,14 @@ Kimi scans `~/.agents/skills/` and `~/.config/agents/skills/` in its "generic gr
 
 ## Hermes Agent
 
-Hermes does not scan `~/.agents/skills/` by default. Add it to `~/.hermes/config.yaml`:
+Hermes's actual config/skills root is `$HERMES_HOME` (check `echo $HERMES_HOME` first — if unset, it defaults per platform below). Editing `~/.hermes/config.yaml` on a machine where `HERMES_HOME` points elsewhere has no effect and fails silently — `hermes skills list` will just never show your skills.
+
+| Platform | Default `HERMES_HOME` (when env var unset) |
+|----------|-------------------|
+| macOS / Linux | `~/.hermes/` |
+| Windows | `%LOCALAPPDATA%\hermes\` |
+
+Hermes does not scan `~/.agents/skills/` by default. Add it to `$HERMES_HOME/config.yaml`:
 
 ```yaml
 skills:
@@ -164,7 +171,7 @@ Then restart Hermes. Verify with `hermes skills list`.
 Alternatively, use the Hermes-native adapter which uses Hermes's own `terminal()` API format:
 
 ```bash
-HERMES_SKILLS=~/.hermes/skills   # adjust to your platform path
+HERMES_SKILLS="${HERMES_HOME:-$HOME/.hermes}/skills"   # resolve HERMES_HOME first; see table above for the Windows default
 mkdir -p "$HERMES_SKILLS/autonomous-ai-agents"
 cp -r helpers/hermes/delegate-tasks "$HERMES_SKILLS/autonomous-ai-agents/"
 ```
@@ -178,11 +185,6 @@ Invoke:
 ```
 /delegate-tasks delegate to opencode: add a User model to src/models/user.ts
 ```
-
-| Platform | Hermes skills path |
-|----------|-------------------|
-| macOS / Linux | `~/.hermes/skills/` |
-| Windows | `%LOCALAPPDATA%\hermes\skills\` |
 
 ---
 
@@ -233,8 +235,8 @@ rm -rf ~/.agents/skills/delegate-to-opencode   # repeat for each skill
 rm -rf ~/.claude/skills/shared
 rm -rf ~/.claude/skills/delegate-to-opencode   # repeat for each skill
 
-# Hermes native adapter
-rm -rf ~/.hermes/skills/autonomous-ai-agents/delegate-tasks
+# Hermes native adapter (adjust $HERMES_HOME per platform, see Hermes section)
+rm -rf "${HERMES_HOME:-$HOME/.hermes}/skills/autonomous-ai-agents/delegate-tasks"
 ```
 
 ---
@@ -254,7 +256,7 @@ The `shared/` folder wasn't installed alongside the skill folders. Re-run the in
 Requires a git repo with at least one commit: `git init && git commit --allow-empty -m "init"`
 
 **Hermes skill not appearing**
-Run `hermes skills list`. Check that `external_dirs` in `~/.hermes/config.yaml` points to the correct path and that Hermes was restarted after the config change.
+Run `hermes skills list`. First confirm which `config.yaml` Hermes actually reads — `echo $HERMES_HOME` (defaults to `~/.hermes` on macOS/Linux, `%LOCALAPPDATA%\hermes` on Windows). Editing the wrong one is silent: no error, the skill just never shows up. Check `external_dirs` in `$HERMES_HOME/config.yaml` points to the correct path and that Hermes was restarted after the config change.
 
 **`helpers/scripts/delegate.sh` exits with "Runtime not found"**
 The chosen agent CLI is not on PATH. Verify with `command -v <runtime>`.
