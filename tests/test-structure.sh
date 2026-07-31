@@ -41,7 +41,12 @@ for d in skills helpers docs tests; do
     || fail "Top-level directory $d/ missing"
 done
 
-# ─── skills/shared/ — shared skill resources ──────────────────────────────────
+# ─── skills/shared/ — canonical workflow.md source (maintainer-only, not distributed) ──
+# Each skill folder carries its own copy of workflow.md so it installs standalone
+# (e.g. via `npx skills add owner/repo --skill delegate-to-kimi`, which never
+# fetches sibling directories). skills/shared/ has no SKILL.md, so skill scanners
+# skip it — it exists purely so maintainers edit the workflow in one place and
+# sync it out, instead of hand-editing 8 copies.
 
 [ -d "$PROJECT_ROOT/skills/shared" ] \
   && pass "skills/shared/ directory exists" \
@@ -269,23 +274,39 @@ yaml.safe_load(parts[1])
     && pass "skills/$skill/SKILL.md defines Step 4" \
     || fail "skills/$skill/SKILL.md missing Step 4 content"
 
-  grep -q "shared/workflow.md" "$SKILL_FILE" \
-    && pass "skills/$skill/SKILL.md references shared/workflow.md" \
-    || fail "skills/$skill/SKILL.md missing shared/workflow.md reference"
+  grep -q "workflow.md" "$SKILL_FILE" \
+    && pass "skills/$skill/SKILL.md references workflow.md" \
+    || fail "skills/$skill/SKILL.md missing workflow.md reference"
 
-  # Must use correct relative path: skill is one level below skills/
-  grep -q '\.\./shared/workflow\.md' "$SKILL_FILE" \
-    && pass "skills/$skill/SKILL.md uses correct ../shared/workflow.md path" \
-    || fail "skills/$skill/SKILL.md has wrong workflow path (must be ../shared/workflow.md)"
+  # Each skill must be self-contained: reference its own local workflow.md,
+  # not a sibling ../shared/ path — a distributable single-folder skill
+  # (e.g. `npx skills add owner/repo --skill delegate-to-kimi`) never pulls
+  # sibling directories, so a ../shared/ reference would 404 at runtime.
+  grep -qE '\]\(workflow\.md\)|`workflow\.md`' "$SKILL_FILE" \
+    && pass "skills/$skill/SKILL.md uses local workflow.md path" \
+    || fail "skills/$skill/SKILL.md has wrong workflow path (must be local workflow.md, not ../shared/workflow.md)"
 
-  # Must NOT reference the old docs/ path
-  grep -q '\.\./docs/workflow\.md' "$SKILL_FILE" \
-    && fail "skills/$skill/SKILL.md has stale ../docs/workflow.md reference" \
-    || pass "skills/$skill/SKILL.md has no stale ../docs/workflow.md reference"
+  # Must NOT reference the old shared/ or docs/ paths (self-containment regression)
+  grep -qE '\.\./shared/workflow\.md|\.\./docs/workflow\.md' "$SKILL_FILE" \
+    && fail "skills/$skill/SKILL.md has stale ../shared/ or ../docs/ workflow reference (breaks single-folder installs)" \
+    || pass "skills/$skill/SKILL.md has no stale ../shared/ or ../docs/ workflow reference"
+
+  # workflow.md must exist locally in the skill's own folder (self-contained)
+  [ -f "$PROJECT_ROOT/skills/$skill/workflow.md" ] \
+    && pass "skills/$skill/workflow.md exists (self-contained)" \
+    || fail "skills/$skill/workflow.md missing (skill is not self-contained)"
+
+  # ...and must be byte-identical to the canonical skills/shared/workflow.md
+  # source, so the 8 distributed copies never drift from each other.
+  if [ -f "$PROJECT_ROOT/skills/$skill/workflow.md" ]; then
+    diff -q "$PROJECT_ROOT/skills/shared/workflow.md" "$PROJECT_ROOT/skills/$skill/workflow.md" >/dev/null 2>&1 \
+      && pass "skills/$skill/workflow.md matches canonical skills/shared/workflow.md" \
+      || fail "skills/$skill/workflow.md has drifted from skills/shared/workflow.md (re-sync: cp skills/shared/workflow.md skills/$skill/workflow.md)"
+  fi
 
   # Step 0 must not be duplicated here
   grep -q "Step 0: Git Preflight" "$SKILL_FILE" \
-    && fail "skills/$skill/SKILL.md duplicates Step 0 (belongs in shared/workflow.md only)" \
+    && fail "skills/$skill/SKILL.md duplicates Step 0 (belongs in workflow.md only)" \
     || pass "skills/$skill/SKILL.md has no duplicate Step 0"
 
   # $ARGUMENTS must be embedded so the task description flows into the workflow

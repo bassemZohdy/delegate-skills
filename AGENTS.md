@@ -28,12 +28,29 @@ Generic SKILL.md files conforming to the agentskills.io spec. Install by copying
 ```
 skills/
 ├── shared/
-│   └── workflow.md          # Steps 0–3 and 5, shared by all skills via ../shared/workflow.md
+│   └── workflow.md          # canonical source for Steps 0–3 and 5 — maintainer-only, not distributed
 ├── delegate-to-any/
-│   └── SKILL.md             # Step 4: scan all runtimes, select best, delegate
+│   ├── SKILL.md             # Step 4: scan all runtimes, select best, delegate
+│   └── workflow.md          # copy of skills/shared/workflow.md
 └── delegate-to-<runtime>/
-    └── SKILL.md             # Step 4: detect, validate, launch, retry for one runtime
+    ├── SKILL.md             # Step 4: detect, validate, launch, retry for one runtime
+    └── workflow.md          # copy of skills/shared/workflow.md
 ```
+
+Every skill folder is **self-contained**: it carries its own `workflow.md` copy and
+its `SKILL.md` references it as a local path (`workflow.md`, never `../shared/workflow.md`).
+This matters because single-skill installers (`npx skills add owner/repo --skill
+delegate-to-kimi`, the [skills.sh](https://skills.sh) CLI) fetch only the named
+subdirectory — a sibling `../shared/` reference would 404. `skills/shared/` has no
+`SKILL.md` of its own, so skill scanners ignore it entirely; it exists only so a
+maintainer edits the workflow in one place and syncs it out to the 8 copies:
+
+```bash
+for skill in skills/delegate-to-*; do cp skills/shared/workflow.md "$skill/workflow.md"; done
+```
+
+`tests/test-structure.sh` enforces that every copy stays byte-identical to the
+canonical source, and that `.agents/skills/` mirrors `skills/` exactly.
 
 ### `docs/` — documentation only
 
@@ -84,7 +101,7 @@ Other top-level files:
 - **Never expand the handoff markdown into a shell variable** — special characters break cross-platform argument parsing. Use `--file` (opencode), `@path` (pi), stdin via `-` (codex), or absolute path reference in the prompt (hermes, kimi, agy).
 - The `active_form` field in TODO.md is critical — it tells reviewing agents what mid-task progress looks like.
 - For tools with no `--dir` flag (pi, hermes, kimi), capture `PROJECT_ROOT="$(pwd)"` **before** `cd`ing into the worktree so all `.delegate/tasks/*` paths stay correct.
-- All skills reference the shared workflow via `../shared/workflow.md` (one level up from the skill directory, inside `skills/`).
+- All skills reference their own local `workflow.md` copy (never `../shared/workflow.md` — that breaks single-folder installs). Edit `skills/shared/workflow.md` and re-sync copies; don't hand-edit a distributed copy directly.
 
 ## CLI differences that matter
 

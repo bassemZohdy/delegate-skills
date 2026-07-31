@@ -43,6 +43,7 @@ The skills conform to the [agentskills.io open standard](https://agentskills.io/
 | Format | Install from | Works in |
 |--------|-------------|----------|
 | agentskills.io SKILL.md | `skills/` | OpenCode · OpenAI Codex · pi · Gemini CLI · Kimi · Claude Code · VS Code · Cursor · Windsurf · JetBrains · 40+ other tools |
+| [skills.sh](https://skills.sh) CLI | `skills/<name>/` (flat layout, self-contained) | `npx skills add bassemZohdy/delegate-skills --skill <name>` — any skills.sh-compatible agent |
 | Hermes adapter | `helpers/hermes/` | Hermes Agent (needs explicit `~/.agents/skills/` config — see install guide) |
 | Generic prompt + script | `helpers/adapters/` + `helpers/scripts/` | Any AI with bash/terminal access (Copilot, Zed AI, Continue.dev, …) |
 
@@ -56,22 +57,28 @@ The skills conform to the [agentskills.io open standard](https://agentskills.io/
 
 Installs to `~/.agents/skills/` — works natively in OpenCode, OpenAI Codex, pi, Gemini CLI, Kimi, and any [agentskills.io-compliant tool](https://agentskills.io/clients.md).
 
+Each skill folder under `skills/` is fully self-contained (no shared folder to install alongside it), so you can grab all of them or just the one you need.
+
 ```bash
-git clone https://github.com/bassem-io/delegate-skills.git
+git clone https://github.com/bassemZohdy/delegate-skills.git
 cd delegate-skills
 
 # Copy — snapshot at install time
 mkdir -p ~/.agents/skills
-cp -r skills/shared ~/.agents/skills/
 for skill in skills/delegate-to-*; do cp -r "$skill" ~/.agents/skills/; done
 
 # Or symlink — stays in sync with the repo
 REPO="$(pwd)"
 mkdir -p ~/.agents/skills
-ln -sf "$REPO/skills/shared" ~/.agents/skills/shared
 for skill in skills/delegate-to-*; do
   ln -sf "$REPO/$skill" ~/.agents/skills/$(basename "$skill")
 done
+```
+
+Or via the [skills.sh](https://skills.sh) CLI, one skill at a time:
+
+```bash
+npx skills add bassemZohdy/delegate-skills --skill delegate-to-kimi
 ```
 
 ### Claude Code
@@ -81,12 +88,10 @@ Claude Code reads from `~/.claude/skills/`. Install there directly or symlink fr
 ```bash
 # Option A: install directly to ~/.claude/skills/
 mkdir -p ~/.claude/skills
-cp -r skills/shared ~/.claude/skills/
 for skill in skills/delegate-to-*; do cp -r "$skill" ~/.claude/skills/; done
 
 # Option B: symlink from the cross-tool location (keeps both in sync)
 mkdir -p ~/.claude/skills
-ln -sf ~/.agents/skills/shared ~/.claude/skills/shared
 for skill in ~/.agents/skills/delegate-to-*; do
   ln -sf "$skill" ~/.claude/skills/$(basename "$skill")
 done
@@ -178,17 +183,19 @@ delegate-skills/
 ├── AGENTS.md                        # agent-facing conventions and CLI reference table
 ├── TODO.md                          # task ledger (append-only when skills are in use)
 │
-├── skills/                          # installable skills — copy to ~/.claude/skills/ or ~/.agents/skills/
+├── skills/                          # installable skills — copy any single folder, or all of them
 │   ├── shared/
-│   │   └── workflow.md              # shared Steps 0–3 and 5 (referenced by all skills as ../shared/workflow.md)
-│   ├── delegate-to-any/SKILL.md     # auto-router: picks best installed runtime
-│   ├── delegate-to-opencode/SKILL.md
-│   ├── delegate-to-codex/SKILL.md
-│   ├── delegate-to-pi/SKILL.md
-│   ├── delegate-to-mimo/SKILL.md
-│   ├── delegate-to-hermes/SKILL.md
-│   ├── delegate-to-kimi/SKILL.md
-│   └── delegate-to-agy/SKILL.md
+│   │   └── workflow.md              # canonical source for Steps 0–3 and 5 — maintainer-only, not distributed
+│   ├── delegate-to-any/             # auto-router: picks best installed runtime
+│   │   ├── SKILL.md
+│   │   └── workflow.md              # copy of skills/shared/workflow.md — makes the folder self-contained
+│   ├── delegate-to-opencode/{SKILL.md,workflow.md}
+│   ├── delegate-to-codex/{SKILL.md,workflow.md}
+│   ├── delegate-to-pi/{SKILL.md,workflow.md}
+│   ├── delegate-to-mimo/{SKILL.md,workflow.md}
+│   ├── delegate-to-hermes/{SKILL.md,workflow.md}
+│   ├── delegate-to-kimi/{SKILL.md,workflow.md}
+│   └── delegate-to-agy/{SKILL.md,workflow.md}
 │
 ├── docs/                            # documentation only
 │   ├── usage.md                     # usage guide, timeout tiers, model overrides

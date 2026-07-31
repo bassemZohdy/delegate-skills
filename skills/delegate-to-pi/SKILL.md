@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and pi on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.3.0
+  version: 1.3.1
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -19,9 +19,9 @@ Hands a coding task to pi in the background with full isolation, structured cont
 
 $ARGUMENTS
 
-Follow the shared workflow in [`../shared/workflow.md`](../shared/workflow.md) for Steps −1 through 3 and Step 5. This file defines only **Step 4** — the runtime-specific detection and launch logic.
+Follow the shared workflow in [`workflow.md`](workflow.md) for Steps −1 through 3 and Step 5. This file defines only **Step 4** — the runtime-specific detection and launch logic.
 
-Before proceeding: if `../shared/workflow.md` does not exist, `shared/` was not installed alongside this skill (see docs/install.md's per-tool install steps — every skill needs it as a sibling directory). Stop and tell the user to reinstall including `shared/`, rather than improvising the workflow from memory.
+Before proceeding: if `workflow.md` does not exist in this same folder, the skill was installed incompletely (a partial file copy). Stop and tell the user to reinstall this skill, rather than improvising the workflow from memory.
 
 ---
 

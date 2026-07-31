@@ -7,6 +7,7 @@ This repository contains **skill files** conforming to the [agentskills.io open 
 | Format | Location in this repo | For which tools |
 |--------|----------------------|-----------------|
 | agentskills.io SKILL.md | `skills/delegate-to-*/` | Any tool supporting `~/.agents/skills/` or `~/.claude/skills/` |
+| skills.sh CLI install | `skills/<name>/` (same files, flat layout) | `npx skills add` — see the "skills.sh CLI" section below |
 | Hermes adapter | `helpers/hermes/delegate-tasks/` | Hermes Agent (uses its own skill format) |
 | Generic prompt + script | `helpers/adapters/` + `helpers/scripts/` | Any AI with bash/terminal access |
 
@@ -28,20 +29,26 @@ This repository contains **skill files** conforming to the [agentskills.io open 
 | mimo | ❓ Not confirmed | Install directly via mimo's own skills path |
 | agy | ❓ Not confirmed | Install directly via agy's own skills path |
 
-### Required layout
+### Self-contained layout
 
-Each `SKILL.md` references `../shared/workflow.md`. The `shared/` folder must be installed **alongside** the skill folders, one level up:
+Each skill folder is fully self-contained — `SKILL.md` references its own local
+`workflow.md` copy, never a sibling directory. Install one skill folder or all of
+them; nothing else needs to come along:
 
 ```
 <skills-root>/                  ← ~/.agents/skills/ or ~/.claude/skills/
-├── shared/
-│   └── workflow.md
 ├── delegate-to-any/
-│   └── SKILL.md
+│   ├── SKILL.md
+│   └── workflow.md
 ├── delegate-to-opencode/
-│   └── SKILL.md
+│   ├── SKILL.md
+│   └── workflow.md
 └── ...
 ```
+
+(`skills/shared/workflow.md` still exists in the repo — it's the canonical source
+the maintainer edits and syncs out to each skill's copy. It's not needed at
+install time and has no `SKILL.md` of its own, so skill scanners ignore it.)
 
 ### Installing to `~/.agents/skills/`
 
@@ -50,7 +57,6 @@ On macOS, Linux, WSL, or Git Bash on Windows:
 ```bash
 # Copy — snapshot at install time
 mkdir -p ~/.agents/skills
-cp -r skills/shared ~/.agents/skills/
 for skill in skills/delegate-to-*; do
   cp -r "$skill" ~/.agents/skills/
 done
@@ -58,17 +64,23 @@ done
 # Symlink — stays in sync with the repo (run from repo root)
 REPO="$(pwd)"
 mkdir -p ~/.agents/skills
-ln -sf "$REPO/skills/shared" ~/.agents/skills/shared
 for skill in skills/delegate-to-*; do
   ln -sf "$REPO/$skill" ~/.agents/skills/$(basename "$skill")
 done
+```
+
+Or install a single skill via the [skills.sh](https://skills.sh) CLI (see that
+section below):
+
+```bash
+npx skills add bassemZohdy/delegate-skills --skill delegate-to-kimi
 ```
 
 ### Verifying
 
 ```bash
 ls ~/.agents/skills/delegate-to-opencode/SKILL.md
-ls ~/.agents/skills/shared/workflow.md
+ls ~/.agents/skills/delegate-to-opencode/workflow.md
 ```
 
 Then invoke in any supported tool:
@@ -85,14 +97,12 @@ Claude Code reads from `~/.claude/skills/`. Install there directly, or symlink f
 ```bash
 # Option A: install directly
 mkdir -p ~/.claude/skills
-cp -r skills/shared ~/.claude/skills/
 for skill in skills/delegate-to-*; do
   cp -r "$skill" ~/.claude/skills/
 done
 
 # Option B: symlink from ~/.agents/skills/ (keeps both locations in sync)
 mkdir -p ~/.claude/skills
-ln -sf ~/.agents/skills/shared ~/.claude/skills/shared
 for skill in ~/.agents/skills/delegate-to-*; do
   ln -sf "$skill" ~/.claude/skills/$(basename "$skill")
 done
@@ -118,7 +128,7 @@ In any Claude Code session, type `/delegate` — all installed skills appear in 
 
 ```bash
 ls ~/.claude/skills/delegate-to-opencode/SKILL.md
-ls ~/.claude/skills/shared/workflow.md
+ls ~/.claude/skills/delegate-to-opencode/workflow.md
 ```
 
 ---
@@ -146,6 +156,29 @@ Gemini CLI scans `~/.agents/skills/` at the user scope (takes precedence over `~
 ## Kimi Code CLI
 
 Kimi scans `~/.agents/skills/` and `~/.config/agents/skills/` in its "generic group" alongside Kimi-specific paths. Cross-tool install works. Skills are also picked up from a project-local `.agents/skills/` directory.
+
+---
+
+## skills.sh CLI
+
+[skills.sh](https://skills.sh) is a cross-tool skill directory/CLI (`vercel-labs/skills`)
+that installs a single skill folder straight from a GitHub repo — no local clone needed:
+
+```bash
+npx skills add bassemZohdy/delegate-skills --skill delegate-to-kimi
+# or any other skill: delegate-to-any, delegate-to-opencode, delegate-to-pi,
+# delegate-to-mimo, delegate-to-hermes, delegate-to-codex, delegate-to-agy
+```
+
+It resolves via the flat `skills/<name>/SKILL.md` layout, which is exactly how
+this repo is laid out — no extra config needed. Because it only fetches the
+named subdirectory (never sibling folders), this only works because each skill
+folder is self-contained (see "Self-contained layout" above); it would silently
+break if a skill referenced `../shared/workflow.md`.
+
+There's no manual submission step to appear on the skills.sh directory site —
+listing there is automatic, driven by anonymous install telemetry the first
+time someone runs `npx skills add` against this repo.
 
 ---
 
@@ -227,13 +260,14 @@ ln -sf /path/to/delegate-skills/helpers/scripts/delegate.sh scripts/delegate.sh
 
 ```bash
 # From ~/.agents/skills/
-rm -rf ~/.agents/skills/shared
 rm -rf ~/.agents/skills/delegate-to-any
 rm -rf ~/.agents/skills/delegate-to-opencode   # repeat for each skill
 
 # From ~/.claude/skills/
-rm -rf ~/.claude/skills/shared
 rm -rf ~/.claude/skills/delegate-to-opencode   # repeat for each skill
+
+# If you have a pre-refactor install with a shared/ folder, also remove it:
+rm -rf ~/.agents/skills/shared ~/.claude/skills/shared
 
 # Hermes native adapter (adjust $HERMES_HOME per platform, see Hermes section)
 rm -rf "${HERMES_HOME:-$HOME/.hermes}/skills/autonomous-ai-agents/delegate-tasks"
@@ -249,8 +283,8 @@ Confirm the file exists (`ls ~/.agents/skills/delegate-to-opencode/SKILL.md`) an
 **`missing_runtime` error**
 The agent CLI isn't on PATH. Install it (see `docs/usage.md`) and restart your terminal.
 
-**Skill can't find `../shared/workflow.md`**
-The `shared/` folder wasn't installed alongside the skill folders. Re-run the install commands and include `skills/shared/`.
+**Skill can't find `workflow.md`**
+Each skill folder must keep its own `workflow.md` alongside `SKILL.md` — it's not shared from elsewhere. Confirm `ls ~/.agents/skills/delegate-to-opencode/workflow.md`; if it's a partial copy (e.g. only `SKILL.md` was copied), re-run the install command for that skill.
 
 **Worktree creation fails**
 Requires a git repo with at least one commit: `git init && git commit --allow-empty -m "init"`

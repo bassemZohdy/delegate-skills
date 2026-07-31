@@ -5,6 +5,31 @@ the `metadata.version` field in each skill's `SKILL.md`.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.1] — 2026-07-31
+
+Self-contained skill folders: each `skills/delegate-to-*/` now carries its own
+`workflow.md` copy instead of referencing a sibling `../shared/workflow.md`.
+Motivated by single-skill installers — e.g. the [skills.sh](https://skills.sh)
+CLI (`npx skills add owner/repo --skill <name>`) — which fetch only the named
+subdirectory and never pull sibling folders, so a `../shared/` reference
+silently 404s under that install path.
+
+### Changed
+
+- All 8 `SKILL.md` files reference a local `workflow.md` instead of
+  `../shared/workflow.md`.
+- `skills/shared/workflow.md` is now a maintainer-only canonical source (no
+  `SKILL.md` of its own, so skill scanners skip it) — edit it once, then sync
+  copies to each skill folder: `for skill in skills/delegate-to-*; do cp
+  skills/shared/workflow.md "$skill/workflow.md"; done`.
+- `tests/test-structure.sh` gained a drift check: every per-skill
+  `workflow.md` must stay byte-identical to `skills/shared/workflow.md`.
+- README/`docs/install.md`/`AGENTS.md` updated to drop the now-unnecessary
+  "install `shared/` alongside every skill" step, and document the
+  skills.sh CLI as an install path.
+- Fixed a stale GitHub org in README's clone URL
+  (`bassem-io` → `bassemZohdy`, matching the actual `origin` remote).
+
 ## [1.3.0] — 2026-07-12
 
 Resilience pass: `helpers/scripts/delegate.sh` gains real monitoring/management
