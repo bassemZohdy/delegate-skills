@@ -18,6 +18,10 @@ fi
 DELEGATE_SH="${DELEGATE_SH:-$PROJECT_ROOT/helpers/scripts/delegate.sh}"
 FIXTURES="${FIXTURES:-$PROJECT_ROOT/tests/fixtures/mock-bin}"
 
+# Windows CI may supply TMPDIR as D:/... while pwd and launcher paths use /d/....
+# Allocate fixtures in the same physical Bash namespace as the process under test.
+export TMPDIR="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+
 # ─── Helper: Wait for mock files to be created ──────────────────────────────────
 
 wait_for_mock_file() {
