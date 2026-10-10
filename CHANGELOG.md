@@ -25,6 +25,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Mock process/filesystem safety regressions and Ubuntu/Windows Git Bash CI,
   including worktree failure, unsafe opt-ins, path traversal, foreign worktrees,
   symlinks and project paths containing spaces. No model calls are made by CI.
+- Pin the PyYAML frontmatter-test dependency and set up Python explicitly in CI.
+  Missing Python/PyYAML fails clearly instead of skipping parser checks or being
+  reported as invalid skill YAML.
 
 ## [1.3.1] — 2026-07-31
 

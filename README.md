@@ -232,6 +232,7 @@ delegate-skills/
 ## Running tests
 
 ```bash
+python3 -m pip install -r tests/requirements.txt
 bash tests/run-tests.sh
 ```
 
@@ -240,7 +241,10 @@ Two layers:
 - **Structure tests** (`tests/test-structure.sh`) — frontmatter, workflow references, helper files, runtime coverage, and grep-based semantic regression checks (worktree isolation, real agent PID capture references, watchdog teardown, Codex handoff framing).
 - **Behavior tests** (`tests/test-behavior.sh`) — actually *executes* `helpers/scripts/delegate.sh` against mock CLI binaries (`tests/fixtures/mock-bin/`) in isolated `mktemp -d` sandboxes, asserting real process and filesystem state: git worktree creation, live PID capture (the exact regression class from the v1.1.0 subshell-PID bug), correct flags passed per runtime, watchdog SIGTERM firing on timeout, and more. The `skills/*/SKILL.md` files themselves are natural-language instructions for an AI to follow, not executable, so this is the practical ceiling for automated testing of the runtime-launch logic — everything that actually runs (`delegate.sh`) is covered by real execution, not just text matching.
 
-No external dependencies either way — pure bash, git, and standard coreutils.
+Tests require Bash, Git, standard coreutils, Python 3 and the pinned PyYAML test
+dependency. All eight skill frontmatter files are parsed; missing Python/PyYAML
+fails with an installation diagnostic. The CLIs are mocked, so no model/provider
+calls are made.
 
 ---
 

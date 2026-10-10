@@ -129,7 +129,8 @@ Other top-level files:
 ## Running tests
 
 ```bash
-bash tests/run-tests.sh   # no external dependencies
+python3 -m pip install -r tests/requirements.txt  # PyYAML for all eight frontmatter checks
+bash tests/run-tests.sh                         # mock CLIs; no model/provider calls
 ```
 
 ## Known gotchas

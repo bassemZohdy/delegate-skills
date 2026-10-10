@@ -25,6 +25,17 @@ SKILLS=(
 
 RUNTIMES=( opencode pi mimo hermes kimi codex agy )
 
+# Every skill's frontmatter must be parsed; missing dependencies cannot silently
+# skip these checks or be mistaken for invalid YAML.
+if ! command -v python3 &>/dev/null; then
+  echo "ERROR: tests require Python 3 and PyYAML. Install Python 3, then run: python3 -m pip install -r tests/requirements.txt" >&2
+  exit 1
+fi
+if ! python3 -c 'import yaml' 2>/dev/null; then
+  echo "ERROR: PyYAML test dependency is missing for python3. Run: python3 -m pip install -r tests/requirements.txt" >&2
+  exit 1
+fi
+
 # ─── Required top-level files ─────────────────────────────────────────────────
 
 for f in README.md AGENTS.md TODO.md .gitignore; do
@@ -220,16 +231,14 @@ for skill in "${SKILLS[@]}"; do
     && pass "skills/$skill/SKILL.md has frontmatter delimiter" \
     || fail "skills/$skill/SKILL.md missing frontmatter delimiter"
 
-  if command -v python3 &>/dev/null; then
-    python3 -c "
+  python3 -c "
 import sys, yaml
 text = sys.stdin.read()
 parts = text.split('---', 2)
 yaml.safe_load(parts[1])
-" < "$SKILL_FILE" 2>/dev/null \
-      && pass "skills/$skill/SKILL.md frontmatter is valid YAML" \
-      || fail "skills/$skill/SKILL.md frontmatter is NOT valid YAML (unquoted colon in a value?)"
-  fi
+" < "$SKILL_FILE" \
+    && pass "skills/$skill/SKILL.md frontmatter is valid YAML" \
+    || fail "skills/$skill/SKILL.md frontmatter is NOT valid YAML (unquoted colon in a value?)"
 
   grep -q "^name: $skill" "$SKILL_FILE" \
     && pass "skills/$skill/SKILL.md has correct name field" \
