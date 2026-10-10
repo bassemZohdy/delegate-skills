@@ -27,12 +27,15 @@ RUNTIMES=( opencode pi mimo hermes kimi codex agy )
 
 # Every skill's frontmatter must be parsed; missing dependencies cannot silently
 # skip these checks or be mistaken for invalid YAML.
-if ! command -v python3 &>/dev/null; then
-  echo "ERROR: tests require Python 3 and PyYAML. Install Python 3, then run: python3 -m pip install -r tests/requirements.txt" >&2
+if [ -z "${PYTHON:-}" ]; then
+  if command -v python3 &>/dev/null; then PYTHON=python3; else PYTHON=python; fi
+fi
+if ! command -v "$PYTHON" &>/dev/null || ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info.major == 3 else 1)' 2>/dev/null; then
+  echo "ERROR: tests require Python 3 and PyYAML. Select a Python 3 executable with PYTHON, then run: \"\$PYTHON\" -m pip install -r tests/requirements.txt" >&2
   exit 1
 fi
-if ! python3 -c 'import yaml' 2>/dev/null; then
-  echo "ERROR: PyYAML test dependency is missing for python3. Run: python3 -m pip install -r tests/requirements.txt" >&2
+if ! "$PYTHON" -c 'import yaml' 2>/dev/null; then
+  echo "ERROR: PyYAML test dependency is missing for $PYTHON. Run: \"$PYTHON\" -m pip install -r tests/requirements.txt" >&2
   exit 1
 fi
 
@@ -231,7 +234,7 @@ for skill in "${SKILLS[@]}"; do
     && pass "skills/$skill/SKILL.md has frontmatter delimiter" \
     || fail "skills/$skill/SKILL.md missing frontmatter delimiter"
 
-  python3 -c "
+  "$PYTHON" -c "
 import sys, yaml
 text = sys.stdin.read()
 parts = text.split('---', 2)

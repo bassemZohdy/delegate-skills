@@ -246,6 +246,11 @@ dependency. All eight skill frontmatter files are parsed; missing Python/PyYAML
 fails with an installation diagnostic. The CLIs are mocked, so no model/provider
 calls are made.
 
+The parser uses `PYTHON` when supplied (quote absolute paths containing spaces),
+otherwise `python3`, falling back to `python` if `python3` is absent. The selected
+interpreter must be Python 3 with PyYAML installed. CI uses the setup action's
+exact `python-path` for both dependency installation and parser tests.
+
 ---
 
 ## License

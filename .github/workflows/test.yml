@@ -28,13 +28,18 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        id: python
         with:
           python-version: '3.13'
       - name: Install test dependencies
-        run: python3 -m pip install -r tests/requirements.txt
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: '"$PYTHON" -m pip install -r tests/requirements.txt'
       - name: Syntax and distribution consistency
         run: |
           bash -n helpers/scripts/delegate.sh helpers/scripts/sync-skills.sh tests/*.sh
           bash helpers/scripts/sync-skills.sh --check
       - name: Structure, process and filesystem behavior (mock CLIs only)
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
         run: bash tests/run-tests.sh

@@ -133,6 +133,10 @@ python3 -m pip install -r tests/requirements.txt  # PyYAML for all eight frontma
 bash tests/run-tests.sh                         # mock CLIs; no model/provider calls
 ```
 
+Set `PYTHON` to a Python 3 executable to use the same interpreter as the dependency
+install (absolute paths are supported). Without an override, tests try `python3`,
+then `python`. CI uses setup-python's exact output path for both operations.
+
 ## Known gotchas
 
 - **opencode v0.15+**: known hang where the process doesn't exit after completing. The watchdog (SIGTERM + 30s SIGKILL) handles this.
