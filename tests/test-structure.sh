@@ -66,7 +66,7 @@ done
 if diff -r "$PROJECT_ROOT/skills" "$PROJECT_ROOT/.agents/skills" >/dev/null 2>&1; then
   pass ".agents/skills/ mirror is in sync with skills/"
 else
-  fail ".agents/skills/ mirror differs from skills/ (sync with: rm -rf .agents/skills && cp -r skills .agents/skills)"
+  fail ".agents/skills/ mirror differs from skills/ (run helpers/scripts/sync-skills.sh)"
 fi
 
 # ─── docs/ — documentation only ───────────────────────────────────────────────
@@ -205,6 +205,15 @@ for skill in "${SKILLS[@]}"; do
     continue
   fi
   pass "skills/$skill/SKILL.md exists"
+
+  if [ "$skill" != delegate-to-any ]; then
+    grep -q 'DELEGATE_ALLOW_UNSAFE_FLAGS:-0' "$SKILL_FILE" \
+      && pass "skills/$skill/SKILL.md gates unsafe launch flags" \
+      || fail "skills/$skill/SKILL.md missing unsafe opt-in guard"
+    grep -q 'DELEGATE_ALLOW_UNISOLATED:-0' "$SKILL_FILE" \
+      && pass "skills/$skill/SKILL.md refuses implicit root fallback" \
+      || fail "skills/$skill/SKILL.md missing fallback opt-in guard"
+  fi
 
   # Frontmatter
   head -1 "$SKILL_FILE" | grep -q "^---$" \
@@ -383,7 +392,7 @@ yaml.safe_load(parts[1])
         && pass "skills/$skill/SKILL.md detects opencode / oh-my-opencode" \
         || fail "skills/$skill/SKILL.md missing opencode binary detection"
       grep -q -- "--dangerously-skip-permissions" "$SKILL_FILE" \
-        && pass "skills/$skill/SKILL.md uses --dangerously-skip-permissions" \
+        && pass "skills/$skill/SKILL.md documents opt-in --dangerously-skip-permissions" \
         || fail "skills/$skill/SKILL.md missing --dangerously-skip-permissions"
       grep -q -- "--file" "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md delivers handoff via --file" \
@@ -401,7 +410,7 @@ yaml.safe_load(parts[1])
         && pass "skills/$skill/SKILL.md detects pi binary" \
         || fail "skills/$skill/SKILL.md missing 'command -v pi' detection"
       grep -q -- "--approve" "$SKILL_FILE" \
-        && pass "skills/$skill/SKILL.md uses --approve" \
+        && pass "skills/$skill/SKILL.md documents opt-in --approve" \
         || fail "skills/$skill/SKILL.md missing --approve flag"
       grep -qE '@\$PROJECT_ROOT|@.*\.delegate' "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md delivers handoff via @ file reference" \
@@ -434,10 +443,10 @@ yaml.safe_load(parts[1])
         && pass "skills/$skill/SKILL.md detects hermes binary" \
         || fail "skills/$skill/SKILL.md missing 'command -v hermes' detection"
       grep -q -- "--yolo" "$SKILL_FILE" \
-        && pass "skills/$skill/SKILL.md uses --yolo" \
+        && pass "skills/$skill/SKILL.md documents opt-in --yolo" \
         || fail "skills/$skill/SKILL.md missing --yolo flag"
       grep -q -- "--accept-hooks" "$SKILL_FILE" \
-        && pass "skills/$skill/SKILL.md uses --accept-hooks" \
+        && pass "skills/$skill/SKILL.md documents opt-in --accept-hooks" \
         || fail "skills/$skill/SKILL.md missing --accept-hooks flag"
       grep -q -- " -Q\b\| -Q " "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md uses -Q (quiet / non-interactive)" \
@@ -455,7 +464,7 @@ yaml.safe_load(parts[1])
         && pass "skills/$skill/SKILL.md detects kimi binary" \
         || fail "skills/$skill/SKILL.md missing 'command -v kimi' detection"
       grep -q -- " -y" "$SKILL_FILE" \
-        && pass "skills/$skill/SKILL.md uses -y (auto-approve)" \
+        && pass "skills/$skill/SKILL.md documents opt-in -y (auto-approve)" \
         || fail "skills/$skill/SKILL.md missing -y flag"
       grep -qE 'PROJECT_ROOT.*=.*\$\(pwd\)|PROJECT_ROOT="\$\(pwd\)"' "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md captures PROJECT_ROOT before cd" \
@@ -473,7 +482,7 @@ yaml.safe_load(parts[1])
         && pass "skills/$skill/SKILL.md delivers handoff via stdin (cat \$TASK_FILE)" \
         || fail "skills/$skill/SKILL.md missing stdin handoff delivery"
       grep -q -- "--dangerously-bypass-approvals-and-sandbox" "$SKILL_FILE" \
-        && pass "skills/$skill/SKILL.md uses --dangerously-bypass-approvals-and-sandbox" \
+        && pass "skills/$skill/SKILL.md documents opt-in --dangerously-bypass-approvals-and-sandbox" \
         || fail "skills/$skill/SKILL.md missing --dangerously-bypass-approvals-and-sandbox"
       # codex must be the LAST pipeline element so $! is codex's own PID —
       # a bash -c wrapper PID doesn't forward SIGTERM to the piped codex child.
@@ -505,7 +514,7 @@ yaml.safe_load(parts[1])
         && pass "skills/$skill/SKILL.md uses --print for non-interactive mode" \
         || fail "skills/$skill/SKILL.md missing --print flag"
       grep -q -- "--dangerously-skip-permissions" "$SKILL_FILE" \
-        && pass "skills/$skill/SKILL.md uses --dangerously-skip-permissions" \
+        && pass "skills/$skill/SKILL.md documents opt-in --dangerously-skip-permissions" \
         || fail "skills/$skill/SKILL.md missing --dangerously-skip-permissions"
       grep -q -- "--continue" "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md retry uses --continue" \

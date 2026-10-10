@@ -17,7 +17,7 @@ Skills install to `~/.agents/skills/` (cross-tool interop path — OpenCode, Cod
 | `delegate-to-codex` | `codex` | `npm install -g @openai/codex` |
 | `delegate-to-agy` | `agy` | see Agy docs |
 
-Not a traditional application — no build system, no CI.
+Not a traditional application. Bash structure, behavior and safety tests run in GitHub Actions on Ubuntu and Windows Git Bash.
 
 ## Directory layout
 
@@ -46,7 +46,8 @@ subdirectory — a sibling `../shared/` reference would 404. `skills/shared/` ha
 maintainer edits the workflow in one place and syncs it out to the 8 copies:
 
 ```bash
-for skill in skills/delegate-to-*; do cp skills/shared/workflow.md "$skill/workflow.md"; done
+bash helpers/scripts/sync-skills.sh
+bash helpers/scripts/sync-skills.sh --check
 ```
 
 `tests/test-structure.sh` enforces that every copy stays byte-identical to the
@@ -148,3 +149,44 @@ bash tests/run-tests.sh   # no external dependencies
 - **`grep -h pattern FILE1 FILE2` exits nonzero if either file is missing, even on a real match in the other**: hit `delegate.sh`'s `next-id` when `TODO-ARCHIVE.md` (commonly absent) was piped through `2>/dev/null | ... || LAST_N=""` — the `||` fallback fired on grep's nonzero *exit code* even though it had already printed the correct match to stdout, silently discarding it. Fixed by neutralising grep's own exit status inside the pipe (`{ grep ... || true; } | ...`) rather than catching failure at the end. Any script parsing multi-file grep output under `pipefail` should watch for this.
 - **`.delegate/tasks/` must exist before launch**: Step 3 creates it (`mkdir -p .delegate/tasks .delegate/worktrees`). The Step 4 launch blocks write PID/log/retries files into it and rely on this; skip Step 3 and a first-ever delegation fails on the PID write.
 - **never use a test's own `$$` to simulate "a live agent process"**: sandbox cleanup helpers that kill whatever PID a `.pid` file names will kill the test harness itself if that file happens to contain the harness's own PID. Use a genuine disposable child (`sleep 100 &`) instead.
+
+## Launch safety and compatibility
+
+`helpers/scripts/delegate.sh` omits automatic permission-bypass flags and refuses
+to launch if a verified git worktree cannot be created or reused. Codex uses the
+`workspace-write` sandbox. A runtime may still refuse an operation or wait for
+an approval in background mode; inspect its log rather than enabling bypasses
+automatically. Host configuration and each runtime's own policies still apply.
+This helper does not add permission checks or an OS sandbox to a runtime that
+lacks them.
+
+Two independent, per-launch opt-ins are available:
+
+```bash
+# Accept edits in the original project if no worktree can be created.
+DELEGATE_ALLOW_UNISOLATED=1 bash helpers/scripts/delegate.sh pi TASK-1 1800
+
+# Explicitly accept runtime permission bypass in a controlled environment.
+DELEGATE_ALLOW_UNSAFE_FLAGS=1 bash helpers/scripts/delegate.sh pi TASK-1 1800
+```
+
+Both variables accept only `0` (default) or `1`. The second enables supported
+OpenCode `--auto`/legacy skip-permissions, Pi `--approve`, MiMo skip-permissions,
+Hermes YOLO/hook acceptance, Kimi YOLO, Codex approval/sandbox bypass or Agy
+skip-permissions. Opt-in is never inferred from worktree availability or retry.
+Git worktrees separate code edits; **they are not an OS security boundary**.
+They share repository metadata and do not constrain processes, secrets, network
+access or host filesystem access. Use an independently configured sandbox when
+those restrictions are needed.
+
+Task IDs must be `TASK-N` with positive decimal N; timeouts must be positive
+decimal integers. Delegation directories/state files may not be symlinks, and
+an existing worktree must match this repository and `<runtime>/TASK-N` branch.
+These checks guard accidental traversal/reuse; they do not defend against a
+concurrent hostile process modifying paths after validation.
+
+Maintain `skills/` as the source and run `bash helpers/scripts/sync-skills.sh`
+after edits. `--check` verifies distributed workflow copies and `.agents/skills/`
+without writing files. Copies remain self-contained for single-skill installs.
+No root license file is added in this change: the existing MIT declarations
+remain subject to the owner's licensing/provenance review.

@@ -112,53 +112,17 @@ terminal(command="bash scripts/delegate.sh <runtime> TASK-<N> <timeout-secs>", w
 
 Capture the output: `PID=`, `LOG=`, `WORK_DIR=`.
 
-If `scripts/delegate.sh` is not present in the project, launch directly. See CLI patterns below.
+If the helper is absent, install `helpers/scripts/delegate.sh` as
+`scripts/delegate.sh` first, or use the safe manual launch instructions in the
+installed runtime skill. Do not use legacy direct launch templates that enable
+auto-approval or bypass sandboxing. Supported runtimes are opencode, pi, mimo,
+hermes, kimi, codex and agy.
 
-#### Direct launch patterns (without delegate.sh)
-
-**opencode:**
-```
-terminal(command="PROJECT_ROOT=$(pwd) && OPENCODE_AUTO=$(opencode run --help 2>&1 | grep -qo -- '--auto' && echo --auto || (opencode run --help 2>&1 | grep -qo -- '--dangerously-skip-permissions' && echo --dangerously-skip-permissions)) && nohup opencode run 'Execute handoff.' --file \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.md\" --dir \"$PROJECT_ROOT/.delegate/worktrees/TASK-<N>\" $OPENCODE_AUTO > \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
-```
-`--dir` points opencode's cwd at the worktree, so `--file` must be an absolute path — a relative one silently fails to resolve. The auto-approval flag name varies by version (`--auto` replaced `--dangerously-skip-permissions` as of opencode v1.17.x) — detect it rather than hardcoding.
-
-**pi:**
-```
-terminal(command="PROJECT_ROOT=$(pwd) && cd .delegate/worktrees/TASK-<N> && nohup pi -p '@'\"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.md\" 'Execute handoff.' --approve > \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
-```
-
-**hermes (self-delegate):**
-```
-terminal(command="PROJECT_ROOT=$(pwd) && cd .delegate/worktrees/TASK-<N> && nohup hermes chat -q 'Read '\"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.md\"' and execute.' --yolo --accept-hooks -Q > \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
-```
-
-**kimi:**
-```
-terminal(command="PROJECT_ROOT=$(pwd) && cd .delegate/worktrees/TASK-<N> && nohup kimi -p 'Read '\"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.md\"' and execute.' -y > \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
-```
-
-**codex:**
-```
-terminal(command="export _F=$(pwd)/.delegate/tasks/TASK-<N>.md _D=$(pwd)/.delegate/worktrees/TASK-<N> && nohup bash -c '{ printf \"%s\\n\\n\" \"Execute the task described in the handoff document below. Follow all instructions in it exactly.\"; cat \"$_F\"; } | codex exec -C \"$_D\" -s danger-full-access --dangerously-bypass-approvals-and-sandbox -' > $(pwd)/.delegate/tasks/TASK-<N>.log 2>&1 & echo $!", workdir="<project>")
-```
-
-The `printf` framing is mandatory — piping the raw handoff risks Codex treating it as content to discuss rather than a task to execute.
-
-**mimo:**
-```
-terminal(command="PROJECT_ROOT=$(pwd) && nohup mimo run 'Execute handoff.' --file \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.md\" --dir \"$PROJECT_ROOT/.delegate/worktrees/TASK-<N>\" --dangerously-skip-permissions > \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
-```
-Same absolute-path requirement as opencode above — `--dir` changes mimo's cwd, so `--file` must be absolute.
-
-**agy:**
-```
-terminal(command="nohup agy --print 'Read $(pwd)/.delegate/tasks/TASK-<N>.md and execute.' --add-dir .delegate/worktrees/TASK-<N> --dangerously-skip-permissions > .delegate/tasks/TASK-<N>.log 2>&1 & echo $!", workdir="<project>")
-```
-
-Set a watchdog after any direct launch:
-```
-terminal(command="(sleep <timeout> && kill -TERM <PID> 2>/dev/null && sleep 30 && kill -KILL <PID> 2>/dev/null) & echo $!", workdir="<project>")
-```
+The helper fails closed when worktree isolation is unavailable. An operator can
+explicitly opt into project-root edits with `DELEGATE_ALLOW_UNISOLATED=1` and
+separately opt into runtime permission bypass with `DELEGATE_ALLOW_UNSAFE_FLAGS=1`.
+Do not invent either opt-in to fix a failed run. Worktrees isolate code edits;
+they do not isolate processes, credentials, network access or other host files.
 
 ---
 

@@ -132,7 +132,13 @@ RUNTIME=<opencode|pi|mimo — whichever skill is running>
 git worktree add .delegate/worktrees/TASK-$TASK_N -b $RUNTIME/TASK-$TASK_N
 ```
 
-If the project is not a git repo, skip this step, log `worktree: none` in TODO.md, and proceed on the current working tree.
+If the project is not a git repo with a committed HEAD, or worktree creation fails,
+stop delegation. Only an explicit operator opt-in (`DELEGATE_ALLOW_UNISOLATED=1`)
+permits proceeding on the current working tree; warn that the agent will edit it
+directly and record `worktree: none (explicit opt-in)` in TODO.md. Never invent
+this opt-in to recover a failure. Git worktrees provide code isolation, not an OS
+security sandbox. Keep runtime approvals and sandbox defaults enabled; unsafe
+launch flags additionally require `DELEGATE_ALLOW_UNSAFE_FLAGS=1`.
 
 ---
 
@@ -155,7 +161,7 @@ mkdir -p .delegate/tasks .delegate/worktrees
 <all files and directories involved, one per line>
 
 ## Worktree Path
-.delegate/worktrees/TASK-N   # or "(current directory — not a git repo)"
+.delegate/worktrees/TASK-N   # or "(current directory — explicit unisolated opt-in)"
 
 ## Architectural Instructions
 <design decisions, patterns, naming conventions, constraints the user specified>

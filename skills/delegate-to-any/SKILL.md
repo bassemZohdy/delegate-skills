@@ -13,7 +13,7 @@ argument-hint: "[--model <model-id>] <task description>"
 
 # Delegate to Any (Auto-Router)
 
-Scans available agent CLIs, picks the best one, and delegates the task using the full isolation workflow.
+Scans available agent CLIs, picks the best one, and delegates the task using the git worktree isolation workflow.
 
 ## Task
 
@@ -90,6 +90,24 @@ Only if the user explicitly requested a model — validate against the chosen ru
 
 If no model was requested, omit the model flag entirely for all runtimes.
 
+### Safety defaults
+
+Prefer the tested launcher (`scripts/delegate.sh` when installed in the project).
+For a manual launch, first verify a positive `TASK-N` identifier, real delegation
+directories/state files without symlinks, and that the worktree belongs to this
+repository and the expected runtime/task branch. Refuse an unrelated directory.
+
+Preserve the runtime's permission settings and omit bypass flags by default.
+This skill does not supply an OS sandbox or approvals a runtime lacks.
+Git worktrees separate code edits; they
+do not sandbox processes, network access, credentials or other host files.
+Do not automatically enable approval-bypass flags to recover a stalled run.
+Use `DELEGATE_ALLOW_UNSAFE_FLAGS=1` only after explicit operator opt-in for this
+launch; otherwise omit all auto-approval, YOLO and sandbox-bypass flags. Safe
+background runs may refuse operations or wait for approvals: report that outcome.
+Never silently fall back to the project root. If isolation fails, stop unless
+the operator explicitly set `DELEGATE_ALLOW_UNISOLATED=1` for this launch.
+
 ### Launch
 
 Use the launch pattern for the chosen runtime. Two equivalent paths:
@@ -112,7 +130,11 @@ Every per-runtime launch block shares the same mechanical skeleton (shown once h
 # Common skeleton — the runtime-specific nohup line comes from the per-runtime skill.
 PROJECT_ROOT="$(pwd)"                       # capture BEFORE any cd (pi/hermes/kimi/agy cd into the worktree)
 WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
-[ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
+if [ ! -d "$WORK_DIR" ]; then
+  [ "${DELEGATE_ALLOW_UNISOLATED:-0}" = 1 ] || { echo "ERROR: worktree missing; refusing unisolated launch" >&2; exit 1; }
+  echo "WARN: explicitly running without code isolation" >&2
+  WORK_DIR="$PROJECT_ROOT"
+fi
 mkdir -p "$PROJECT_ROOT/.delegate/tasks"    # ensure PID/log/retries files can be written
 TIMEOUT_SECS=<seconds from timeout tier>
 

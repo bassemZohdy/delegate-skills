@@ -5,6 +5,27 @@ the `metadata.version` field in each skill's `SKILL.md`.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- Launches now refuse worktree failures by default. Project-root execution
+  requires the separate `DELEGATE_ALLOW_UNISOLATED=1` opt-in and emits a warning.
+- Runtime approval/sandbox bypass is disabled by default across all seven
+  adapters. `DELEGATE_ALLOW_UNSAFE_FLAGS=1` explicitly enables supported bypass
+  flags; Codex otherwise uses `workspace-write`. Blocking/refused approvals must
+  be reported instead of automatically bypassed during recovery.
+- Validate task identifiers, timeout/opt-in values, delegation paths and reused
+  worktree ownership. Every runtime starts in the verified working directory.
+- Align manual skill instructions and the `.agents/skills/` distribution with
+  those defaults, and provide a canonical-source mirror sync/check command.
+
+### Added
+
+- Mock process/filesystem safety regressions and Ubuntu/Windows Git Bash CI,
+  including worktree failure, unsafe opt-ins, path traversal, foreign worktrees,
+  symlinks and project paths containing spaces. No model calls are made by CI.
+
 ## [1.3.1] — 2026-07-31
 
 Self-contained skill folders: each `skills/delegate-to-*/` now carries its own

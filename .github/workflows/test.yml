@@ -1,0 +1,35 @@
+name: Launcher tests
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mock-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      DELEGATE_ALLOW_UNISOLATED: '0'
+      DELEGATE_ALLOW_UNSAFE_FLAGS: '0'
+      MSYS: winsymlinks:nativestrict
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Syntax and distribution consistency
+        run: |
+          bash -n helpers/scripts/delegate.sh helpers/scripts/sync-skills.sh tests/*.sh
+          bash helpers/scripts/sync-skills.sh --check
+      - name: Structure, process and filesystem behavior (mock CLIs only)
+        run: bash tests/run-tests.sh

@@ -13,7 +13,7 @@ argument-hint: "[--model <model-id>] <task description>"
 
 # Delegate to MiMo
 
-Hands a coding task to mimo in the background with full isolation, structured context, and ongoing review.
+Hands a coding task to mimo in the background with git worktree isolation, structured context, and ongoing review.
 
 ## Task
 
@@ -61,6 +61,24 @@ MIMO_HAS_FILE=$(echo "$MIMO_HELP" | grep -c "\-\-file" || true)
 
 Build the launch command from only the flags that are confirmed present. If `--file` is absent, fall back to attaching the handoff path as a positional argument (`@path` or similar — check help output).
 
+### Safety defaults
+
+Prefer the tested launcher (`scripts/delegate.sh` when installed in the project).
+For a manual launch, first verify a positive `TASK-N` identifier, real delegation
+directories/state files without symlinks, and that the worktree belongs to this
+repository and the expected runtime/task branch. Refuse an unrelated directory.
+
+Preserve the runtime's permission settings and omit bypass flags by default.
+This skill does not supply an OS sandbox or approvals a runtime lacks.
+Git worktrees separate code edits; they
+do not sandbox processes, network access, credentials or other host files.
+Do not automatically enable approval-bypass flags to recover a stalled run.
+Use `DELEGATE_ALLOW_UNSAFE_FLAGS=1` only after explicit operator opt-in for this
+launch; otherwise omit all auto-approval, YOLO and sandbox-bypass flags. Safe
+background runs may refuse operations or wait for approvals: report that outcome.
+Never silently fall back to the project root. If isolation fails, stop unless
+the operator explicitly set `DELEGATE_ALLOW_UNISOLATED=1` for this launch.
+
 ### Launch
 
 **Critical: never expand the handoff document into a shell variable.** Multi-line markdown with special characters (`#`, backticks, quotes, brackets) breaks positional argument parsing cross-platform. Attach the handoff file with `--file` and pass a short prompt as the message.
@@ -71,7 +89,11 @@ Build the launch command from only the flags that are confirmed present. If `--f
 # of the project root, where .delegate/tasks/ actually lives.
 PROJECT_ROOT="$(pwd)"
 WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
-[ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
+if [ ! -d "$WORK_DIR" ]; then
+  [ "${DELEGATE_ALLOW_UNISOLATED:-0}" = 1 ] || { echo "ERROR: worktree missing; refusing unisolated launch" >&2; exit 1; }
+  echo "WARN: explicitly running without code isolation" >&2
+  WORK_DIR="$PROJECT_ROOT"
+fi
 
 TIMEOUT_SECS=<seconds from timeout tier>
 
@@ -81,7 +103,7 @@ TIMEOUT_SECS=<seconds from timeout tier>
 MIMO_ARGS=()
 [ "$MIMO_HAS_FILE" -gt 0 ] && MIMO_ARGS+=(--file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md")
 [ "$MIMO_HAS_DIR" -gt 0 ] && MIMO_ARGS+=(--dir "$WORK_DIR")
-[ "$MIMO_HAS_SKIP" -gt 0 ] && MIMO_ARGS+=(--dangerously-skip-permissions)
+[ "${DELEGATE_ALLOW_UNSAFE_FLAGS:-0}" = 1 ] && [ "$MIMO_HAS_SKIP" -gt 0 ] && MIMO_ARGS+=(--dangerously-skip-permissions)
 
 nohup mimo run \
   "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \

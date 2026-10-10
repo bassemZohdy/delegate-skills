@@ -89,65 +89,16 @@ If scripts/delegate.sh exists in the project:
 bash scripts/delegate.sh <runtime> TASK-N <timeout-seconds>
 ```
 
-Otherwise launch directly:
+If the helper is absent, use the safe manual launch instructions from the
+installed runtime skill (`skills/delegate-to-<runtime>/SKILL.md`) or install the
+helper first. Keep its worktree verification, permission defaults and watchdog
+behavior; do not improvise approval-bypass flags to make a blocked run succeed.
 
-**opencode:**
-```
-PROJECT_ROOT="$(pwd)"
-# --dir points opencode's cwd at the worktree, so --file must be absolute or it
-# won't resolve. Auto-approval flag name varies by version — detect it:
-OPENCODE_AUTO=""
-opencode run --help 2>&1 | grep -q -- "--dangerously-skip-permissions" && OPENCODE_AUTO="--dangerously-skip-permissions"
-opencode run --help 2>&1 | grep -q -- "--auto" && OPENCODE_AUTO="--auto"
-nohup opencode run "Execute handoff." --file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md" --dir "$PROJECT_ROOT/.delegate/worktrees/TASK-N" $OPENCODE_AUTO > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
-echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
-```
-
-**pi:**
-```
-PROJECT_ROOT="$(pwd)"
-cd .delegate/worktrees/TASK-N
-nohup pi -p "@$PROJECT_ROOT/.delegate/tasks/TASK-N.md" "Execute handoff." --approve > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
-echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
-```
-
-**codex:**
-```
-TASK_FILE="$(pwd)/.delegate/tasks/TASK-N.md"
-WORK_DIR="$(pwd)/.delegate/worktrees/TASK-N"
-{ printf '%s\n\n' "Execute the task described in the handoff document below. Follow all instructions in it exactly."; cat "$TASK_FILE"; } | nohup codex exec -C "$WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox - > .delegate/tasks/TASK-N.log 2>&1 &
-echo $! > .delegate/tasks/TASK-N.pid
-```
-
-> The `printf` framing is mandatory — piping the raw handoff risks Codex treating it as content to discuss rather than a task to execute. Keep codex as the LAST element of the backgrounded pipeline: `$!` is the last pipeline command's PID, so this makes the watchdog target codex itself rather than a wrapper shell.
-
-**hermes:**
-```
-PROJECT_ROOT="$(pwd)"
-cd .delegate/worktrees/TASK-N
-nohup hermes chat -q "Read $PROJECT_ROOT/.delegate/tasks/TASK-N.md and execute the task." --yolo --accept-hooks -Q > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
-echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
-```
-
-**kimi:**
-```
-PROJECT_ROOT="$(pwd)"
-cd .delegate/worktrees/TASK-N
-nohup kimi -p "Read $PROJECT_ROOT/.delegate/tasks/TASK-N.md and execute the task." -y > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
-echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
-```
-
-**agy:**
-```
-nohup agy --print "Read $(pwd)/.delegate/tasks/TASK-N.md and execute." --add-dir .delegate/worktrees/TASK-N --dangerously-skip-permissions > .delegate/tasks/TASK-N.log 2>&1 &
-echo $! > .delegate/tasks/TASK-N.pid
-```
-
-Set watchdog (replace PID and TIMEOUT). nohup'd so it survives the calling terminal/session closing — a bare backgrounded subshell is not guaranteed to:
-```
-nohup bash -c 'sleep "$1"; kill -TERM "$2" 2>/dev/null; sleep 30; kill -KILL "$2" 2>/dev/null' _ <TIMEOUT> <PID> > /dev/null 2>&1 &
-echo $! > .delegate/tasks/TASK-N.watchdog.pid
-```
+Supported helper runtimes: opencode, pi, mimo, hermes, kimi, codex and agy.
+The default refuses unisolated launch. `DELEGATE_ALLOW_UNISOLATED=1` explicitly
+permits editing the project root; `DELEGATE_ALLOW_UNSAFE_FLAGS=1` separately
+opts into runtime approval/sandbox bypass. Neither may be set automatically.
+Worktrees isolate code edits, not the operating system, credentials or network.
 
 Tell the user: task ID, runtime, log path, worktree, expected timeout.
 
