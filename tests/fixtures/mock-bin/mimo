@@ -11,9 +11,9 @@ if [ "$1" = "run" ] && [ "$2" = "--help" ]; then
 mimo run — Execute tasks with mimo
 
 Options:
---dir <path>             Working directory
 --dangerously-skip-permissions   Skip prompts
 EOF
+  [ "${MOCK_MIMO_HAS_DIR:-1}" = 1 ] && echo "--dir <path> Working directory"
   if [ "${MOCK_MIMO_HAS_FILE:-0}" = "1" ]; then
     echo "--file <path>             Attach a file"
   fi

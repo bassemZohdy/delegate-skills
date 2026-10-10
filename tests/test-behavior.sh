@@ -18,6 +18,10 @@ fi
 DELEGATE_SH="${DELEGATE_SH:-$PROJECT_ROOT/helpers/scripts/delegate.sh}"
 FIXTURES="${FIXTURES:-$PROJECT_ROOT/tests/fixtures/mock-bin}"
 
+# Windows CI may supply TMPDIR as D:/... while pwd and launcher paths use /d/....
+# Allocate fixtures in the same physical Bash namespace as the process under test.
+export TMPDIR="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+
 # ─── Helper: Wait for mock files to be created ──────────────────────────────────
 
 wait_for_mock_file() {
@@ -93,6 +97,21 @@ snapshot_watchdog_children() {
 
 cleanup_sandbox() {
   local sandbox="$1"
+  # Every fixture is allocated by mktemp. Resolve and check its boundary before
+  # any recursive cleanup, including on Windows Git Bash.
+  local temp_root resolved
+  # RETURN traps may run again when this sourced file returns to its caller.
+  # A fixture already removed by the first cleanup is a harmless no-op.
+  if [ ! -e "$sandbox" ] && [ ! -L "$sandbox" ]; then
+    return 0
+  fi
+  temp_root=$(cd "${TMPDIR:-/tmp}" && pwd -P) || return 1
+  [ ! -L "$sandbox" ] && [ -d "$sandbox" ] || return 1
+  resolved=$(cd "$sandbox" && pwd -P) || return 1
+  case "$resolved" in "$temp_root"/*) ;; *)
+    echo "ERROR: refusing cleanup outside fixture temp root: $resolved" >&2
+    return 1 ;;
+  esac
   # Kill all processes associated with this sandbox. The watchdog is a background
   # subshell running `sleep N && kill ... && sleep 30 && kill ...`. Killing only
   # the subshell's own PID orphans the `sleep` it's currently blocked in (it gets
@@ -139,7 +158,7 @@ cleanup_sandbox() {
     done
   fi
   cd "$PROJECT_ROOT" 2>/dev/null || true
-  rm -rf "$sandbox"
+  rm -rf -- "$resolved"
 }
 
 # ─── Test 1: Missing handoff document → exit 1 ──────────────────────────────
@@ -264,7 +283,7 @@ test_opencode_happy() {
   grep -qF -- "$SANDBOX/.delegate/tasks/TASK-4.md" "$SANDBOX/mockout/opencode.args" || return 1
   grep -qF -- "--dir" "$SANDBOX/mockout/opencode.args" || return 1
   grep -qF -- "$SANDBOX/.delegate/worktrees/TASK-4" "$SANDBOX/mockout/opencode.args" || return 1
-  grep -qF -- "--auto" "$SANDBOX/mockout/opencode.args" || return 1
+  grep -qF -- "--auto" "$SANDBOX/mockout/opencode.args" && return 1
 
   # Confirm the log actually captured the mock's output once it finished.
   # The mock writes its .status file, THEN echoes its completion line to
@@ -446,7 +465,7 @@ test_mimo_file_supported() {
   # Check cwd
   local cwd
   cwd=$(cat "$SANDBOX/mockout/mimo.cwd" 2>/dev/null)
-  [ "$cwd" = "$SANDBOX" ] || return 1
+  [ "$cwd" = "$SANDBOX/.delegate/worktrees/TASK-8" ] || return 1
 
   # Check .args
   wait_for_mock_file "$SANDBOX/mockout/mimo.args" || return 1
@@ -569,7 +588,7 @@ test_agy_add_dir() {
   # Check cwd
   local cwd
   cwd=$(cat "$SANDBOX/mockout/agy.cwd" 2>/dev/null)
-  [ "$cwd" = "$SANDBOX" ] || return 1
+  [ "$cwd" = "$SANDBOX/.delegate/worktrees/TASK-11" ] || return 1
 
   # Check .args
   wait_for_mock_file "$SANDBOX/mockout/agy.args" || return 1
@@ -669,7 +688,7 @@ test_not_git_repo() {
   mkdir -p "$SANDBOX/mockout"
   cd "$SANDBOX"
   local tempfile=$SANDBOX/test_out.txt
-  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" opencode TASK-14 30 < /dev/null > "$tempfile" 2>&1
+  DELEGATE_ALLOW_UNISOLATED=1 PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" opencode TASK-14 30 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
   snapshot_watchdog_children "$SANDBOX"
 
@@ -993,7 +1012,7 @@ test_codex_stdin_framing && pass "codex — stdin framing" || fail "codex — st
 test_agy_add_dir && pass "agy — no-cd, \`--add-dir\` behavior" || fail "agy — no-cd, \`--add-dir\` behavior"
 test_hermes_absolute_path && pass "hermes — cd + absolute path in prompt" || fail "hermes — cd + absolute path in prompt"
 test_kimi_absolute_path && pass "kimi — cd + absolute path in prompt" || fail "kimi — cd + absolute path in prompt"
-test_not_git_repo && pass "Not a git repo → fallback to project root" || fail "Not a git repo → fallback to project root"
+test_not_git_repo && pass "Not a git repo → explicitly opted-in project-root launch" || fail "Not a git repo → explicitly opted-in project-root launch"
 test_worktree_reuse && pass "Worktree reuse — second launch for same TASK-N" || fail "Worktree reuse — second launch for same TASK-N"
 test_watchdog_sigterm && pass "Watchdog SIGTERM fires on timeout" || fail "Watchdog SIGTERM fires on timeout"
 test_exit_code_capture && pass "Real exit code captured; watchdog self-cancels on success" || fail "Real exit code captured; watchdog self-cancels on success"

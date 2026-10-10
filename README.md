@@ -131,7 +131,7 @@ bash helpers/scripts/delegate.sh opencode TASK-1 1800
 
 ### Worktree isolation
 
-Each task gets its own git branch (`<runtime>/TASK-N`) and a matching worktree at `.delegate/worktrees/TASK-N`. The agent writes only inside that worktree. When it finishes, you review and merge:
+Each task gets its own git branch (`<runtime>/TASK-N`) and a matching worktree at `.delegate/worktrees/TASK-N`. The agent is launched with that worktree as its working directory. Runtime permissions and sandbox policy determine which other resources it may access. When it finishes, you review and merge:
 
 ```bash
 git merge opencode/TASK-1
@@ -232,6 +232,7 @@ delegate-skills/
 ## Running tests
 
 ```bash
+python3 -m pip install -r tests/requirements.txt
 bash tests/run-tests.sh
 ```
 
@@ -240,10 +241,59 @@ Two layers:
 - **Structure tests** (`tests/test-structure.sh`) — frontmatter, workflow references, helper files, runtime coverage, and grep-based semantic regression checks (worktree isolation, real agent PID capture references, watchdog teardown, Codex handoff framing).
 - **Behavior tests** (`tests/test-behavior.sh`) — actually *executes* `helpers/scripts/delegate.sh` against mock CLI binaries (`tests/fixtures/mock-bin/`) in isolated `mktemp -d` sandboxes, asserting real process and filesystem state: git worktree creation, live PID capture (the exact regression class from the v1.1.0 subshell-PID bug), correct flags passed per runtime, watchdog SIGTERM firing on timeout, and more. The `skills/*/SKILL.md` files themselves are natural-language instructions for an AI to follow, not executable, so this is the practical ceiling for automated testing of the runtime-launch logic — everything that actually runs (`delegate.sh`) is covered by real execution, not just text matching.
 
-No external dependencies either way — pure bash, git, and standard coreutils.
+Tests require Bash, Git, standard coreutils, Python 3 and the pinned PyYAML test
+dependency. All eight skill frontmatter files are parsed; missing Python/PyYAML
+fails with an installation diagnostic. The CLIs are mocked, so no model/provider
+calls are made.
+
+The parser uses `PYTHON` when supplied (quote absolute paths containing spaces),
+otherwise `python3`, falling back to `python` if `python3` is absent. The selected
+interpreter must be Python 3 with PyYAML installed. CI uses the setup action's
+exact `python-path` for both dependency installation and parser tests.
 
 ---
 
 ## License
 
 MIT
+
+## Launch safety and compatibility
+
+`helpers/scripts/delegate.sh` omits automatic permission-bypass flags and refuses
+to launch if a verified git worktree cannot be created or reused. Codex uses the
+`workspace-write` sandbox. A runtime may still refuse an operation or wait for
+an approval in background mode; inspect its log rather than enabling bypasses
+automatically. Host configuration and each runtime's own policies still apply.
+This helper does not add permission checks or an OS sandbox to a runtime that
+lacks them.
+
+Two independent, per-launch opt-ins are available:
+
+```bash
+# Accept edits in the original project if no worktree can be created.
+DELEGATE_ALLOW_UNISOLATED=1 bash helpers/scripts/delegate.sh pi TASK-1 1800
+
+# Explicitly accept runtime permission bypass in a controlled environment.
+DELEGATE_ALLOW_UNSAFE_FLAGS=1 bash helpers/scripts/delegate.sh pi TASK-1 1800
+```
+
+Both variables accept only `0` (default) or `1`. The second enables supported
+OpenCode `--auto`/legacy skip-permissions, Pi `--approve`, MiMo skip-permissions,
+Hermes YOLO/hook acceptance, Kimi YOLO, Codex approval/sandbox bypass or Agy
+skip-permissions. Opt-in is never inferred from worktree availability or retry.
+Git worktrees separate code edits; **they are not an OS security boundary**.
+They share repository metadata and do not constrain processes, secrets, network
+access or host filesystem access. Use an independently configured sandbox when
+those restrictions are needed.
+
+Task IDs must be `TASK-N` with positive decimal N; timeouts must be positive
+decimal integers. Delegation directories/state files may not be symlinks, and
+an existing worktree must match this repository and `<runtime>/TASK-N` branch.
+These checks guard accidental traversal/reuse; they do not defend against a
+concurrent hostile process modifying paths after validation.
+
+Maintain `skills/` as the source and run `bash helpers/scripts/sync-skills.sh`
+after edits. `--check` verifies distributed workflow copies and `.agents/skills/`
+without writing files. Copies remain self-contained for single-skill installs.
+No root license file is added in this change: the existing MIT declarations
+remain subject to the owner's licensing/provenance review.

@@ -13,7 +13,7 @@ argument-hint: "[--model <model-id>] <task description>"
 
 # Delegate to Codex
 
-Hands a coding task to OpenAI Codex CLI in the background with full isolation, structured context, and ongoing review.
+Hands a coding task to OpenAI Codex CLI in the background with git worktree isolation, structured context, and ongoing review.
 
 ## Task
 
@@ -51,10 +51,28 @@ If no model was requested, omit `-m` entirely.
 ```bash
 codex exec --help 2>&1 | grep -E "\-\-cd|\-s sandbox|bypass-approvals|resume"
 # -C / --cd DIR         → set working directory
-# -s danger-full-access → allow all file system writes
-# --dangerously-bypass-approvals-and-sandbox → skip all prompts (required for background)
+# -s workspace-write → keep filesystem sandboxing enabled
+# --dangerously-bypass-approvals-and-sandbox → opt-in only, not required by this skill
 # codex exec resume --last → resume most recent session
 ```
+
+### Safety defaults
+
+Prefer the tested launcher (`scripts/delegate.sh` when installed in the project).
+For a manual launch, first verify a positive `TASK-N` identifier, real delegation
+directories/state files without symlinks, and that the worktree belongs to this
+repository and the expected runtime/task branch. Refuse an unrelated directory.
+
+Preserve the runtime's permission settings and omit bypass flags by default.
+This skill does not supply an OS sandbox or approvals a runtime lacks.
+Git worktrees separate code edits; they
+do not sandbox processes, network access, credentials or other host files.
+Do not automatically enable approval-bypass flags to recover a stalled run.
+Use `DELEGATE_ALLOW_UNSAFE_FLAGS=1` only after explicit operator opt-in for this
+launch; otherwise omit all auto-approval, YOLO and sandbox-bypass flags. Safe
+background runs may refuse operations or wait for approvals: report that outcome.
+Never silently fall back to the project root. If isolation fails, stop unless
+the operator explicitly set `DELEGATE_ALLOW_UNISOLATED=1` for this launch.
 
 ### Launch
 
@@ -64,17 +82,22 @@ codex exec --help 2>&1 | grep -E "\-\-cd|\-s sandbox|bypass-approvals|resume"
 
 ```bash
 WORK_DIR=".delegate/worktrees/TASK-N"
-[ ! -d "$WORK_DIR" ] && WORK_DIR="."
+if [ ! -d "$WORK_DIR" ]; then
+  [ "${DELEGATE_ALLOW_UNISOLATED:-0}" = 1 ] || { echo "ERROR: worktree missing; refusing unisolated launch" >&2; exit 1; }
+  echo "WARN: explicitly running without code isolation" >&2
+  WORK_DIR="."
+fi
 
 TASK_FILE=".delegate/tasks/TASK-N.md"
 TIMEOUT_SECS=<seconds from timeout tier>
+CODEX_SECURITY_ARGS=(-s workspace-write)
+[ "${DELEGATE_ALLOW_UNSAFE_FLAGS:-0}" = 1 ] && CODEX_SECURITY_ARGS=(--dangerously-bypass-approvals-and-sandbox)
 
 # Add -m "<model>" only if user specified one.
 { printf '%s\n\n' "Execute the task described in the handoff document below. Follow all instructions in it exactly."; \
   cat "$TASK_FILE"; } | \
   nohup codex exec -C "$WORK_DIR" \
-    -s danger-full-access \
-    --dangerously-bypass-approvals-and-sandbox \
+    ${CODEX_SECURITY_ARGS[@]+"${CODEX_SECURITY_ARGS[@]}"} \
     - \
     > ".delegate/tasks/TASK-N.log" 2>&1 &
 
@@ -108,8 +131,7 @@ When self-healing retries, resume the last session **with a continuation prompt*
 ```bash
 printf '%s\n\n' "Continue the task from where you left off. The original task handoff is at: $TASK_FILE — re-read it if you need full context." | \
   nohup codex exec resume --last -C "$WORK_DIR" \
-    -s danger-full-access \
-    --dangerously-bypass-approvals-and-sandbox \
+    ${CODEX_SECURITY_ARGS[@]+"${CODEX_SECURITY_ARGS[@]}"} \
     - \
     > ".delegate/tasks/TASK-N.log" 2>&1 &
 ```

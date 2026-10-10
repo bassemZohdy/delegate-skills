@@ -11,9 +11,9 @@
 # ── Launch ───────────────────────────────────────────────────────────────────
 # Handles the mechanical parts of delegation:
 #   1. Validates the handoff document exists
-#   2. Creates (or reuses) an isolated git worktree — falls back to the
-#      project root if isolation isn't possible (never an empty directory,
-#      which would give the agent nothing to work on)
+#   2. Creates (or reuses) a verified git worktree. Refuses to launch if
+#      isolation fails unless DELEGATE_ALLOW_UNISOLATED=1 was explicitly set.
+#      A worktree separates code edits; it is not an OS security sandbox.
 #   3. Launches the agent inside a self-contained supervisor process that:
 #        - is the agent's real parent, so it can capture the agent's TRUE
 #          exit code via `wait` — not just "the process is gone"
@@ -64,7 +64,7 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="$(pwd)"
+PROJECT_ROOT="$(pwd -P)"
 
 # ── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -77,6 +77,62 @@ Usage:
   delegate.sh reconcile                            Report stale in_progress TODO.md entries
   delegate.sh next-id                               Allocate the next TASK-N (lock-protected)
 EOF
+}
+
+# Strict identifiers keep all state files and branch names beneath .delegate.
+validate_task_id() {
+  [[ "$1" =~ ^TASK-[1-9][0-9]*$ ]] || {
+    echo "ERROR: task-id must be TASK-N with a positive decimal N." >&2
+    return 1
+  }
+}
+
+validate_delegate_paths() {
+  local task_id="${1:-}" path
+  for path in "$PROJECT_ROOT/.delegate" "$PROJECT_ROOT/.delegate/tasks" "$PROJECT_ROOT/.delegate/worktrees"; do
+    if [ -L "$path" ] || { [ -e "$path" ] && [ ! -d "$path" ]; }; then
+      echo "ERROR: delegation directories must be real directories: $path" >&2
+      return 1
+    fi
+    if [ -d "$path" ] && [ "$(cd "$path" && pwd -P)" != "$path" ]; then
+      echo "ERROR: delegation directory resolves outside its expected path: $path" >&2
+      return 1
+    fi
+  done
+  [ -z "$task_id" ] && return 0
+  for path in "$PROJECT_ROOT/.delegate/tasks/$task_id".*; do
+    if [ -L "$path" ] || [ -d "$path" ]; then
+      echo "ERROR: task files must not be symlinks or directories: $path" >&2
+      return 1
+    fi
+  done
+  path="$PROJECT_ROOT/.delegate/worktrees/$task_id"
+  if [ -L "$path" ] || { [ -e "$path" ] && [ ! -d "$path" ]; }; then
+    echo "ERROR: worktree path must be a real directory: $path" >&2
+    return 1
+  fi
+  if [ -d "$path" ] && [ "$(cd "$path" && pwd -P)" != "$path" ]; then
+    echo "ERROR: worktree resolves outside its expected path: $path" >&2
+    return 1
+  fi
+}
+
+git_common_dir() {
+  local directory="$1" common
+  common=$(git -C "$directory" rev-parse --git-common-dir) || return 1
+  case "$common" in /*|[A-Za-z]:/*) ;; *) common="$directory/$common" ;; esac
+  (cd "$common" && pwd -P)
+}
+
+validate_worktree() {
+  local directory="$1" branch="$2" top
+  top=$(git -C "$directory" rev-parse --show-toplevel) || return 1
+  [ "$(cd "$top" && pwd -P)" = "$directory" ] &&
+    [ "$(git_common_dir "$directory")" = "$(git_common_dir "$PROJECT_ROOT")" ] &&
+    [ "$(git -C "$directory" symbolic-ref --short HEAD)" = "$branch" ] || {
+      echo "ERROR: existing worktree must belong to this repository and branch $branch." >&2
+      return 1
+    }
 }
 
 pid_alive() { kill -0 "$1" 2>/dev/null; }
@@ -197,6 +253,19 @@ cmd_launch() {
   local PGID_FILE="$TASKS_DIR/$TASK_ID.pgid"
   local SUP_FILE="$TASKS_DIR/$TASK_ID.supervisor.sh"
 
+  validate_task_id "$TASK_ID"
+  validate_delegate_paths "$TASK_ID"
+  [[ "$TIMEOUT_SECS" =~ ^[1-9][0-9]*$ ]] || {
+    echo "ERROR: timeout-secs must be a positive decimal integer." >&2
+    return 1
+  }
+  local ALLOW_UNISOLATED="${DELEGATE_ALLOW_UNISOLATED:-0}"
+  local ALLOW_UNSAFE="${DELEGATE_ALLOW_UNSAFE_FLAGS:-0}"
+  case "$ALLOW_UNISOLATED:$ALLOW_UNSAFE" in 0:0|0:1|1:0|1:1) ;; *)
+    echo "ERROR: DELEGATE_ALLOW_UNISOLATED and DELEGATE_ALLOW_UNSAFE_FLAGS must be 0 or 1." >&2
+    return 1 ;;
+  esac
+
   # ── Preflight ──────────────────────────────────────────────────────────
   if [ ! -f "$TASK_FILE" ]; then
     cat >&2 <<EOF
@@ -222,21 +291,38 @@ EOF
     exit 1
   fi
 
+  case "$RUNTIME" in opencode|pi|mimo|hermes|kimi|codex|agy) ;; *)
+    echo "ERROR: Unsupported runtime '$RUNTIME'." >&2
+    return 1 ;;
+  esac
   mkdir -p "$TASKS_DIR"
 
   # ── Worktree ───────────────────────────────────────────────────────────
-  # Fall back to the project root when isolation isn't possible — the agent
-  # must see the actual code. An empty plain directory would give it nothing.
+  local ISOLATION_FAILURE="" BRANCH="${RUNTIME}/${TASK_ID}"
   if git rev-parse --git-dir &>/dev/null && git rev-parse HEAD &>/dev/null; then
-    local BRANCH="${RUNTIME}/${TASK_ID}"
-    if [ ! -d "$WORK_DIR" ]; then
-      git worktree add "$WORK_DIR" -b "$BRANCH" 2>/dev/null || \
-        git worktree add "$WORK_DIR" "$BRANCH" 2>/dev/null || \
-        { WORK_DIR="$PROJECT_ROOT"; echo "WARN: worktree creation failed — running in project root without isolation" >&2; }
+    if [ -d "$WORK_DIR" ]; then
+      validate_worktree "$WORK_DIR" "$BRANCH" || return 1
+    elif git worktree add "$WORK_DIR" -b "$BRANCH" 2>/dev/null || \
+         git worktree add "$WORK_DIR" "$BRANCH" 2>/dev/null; then
+      validate_delegate_paths "$TASK_ID"
+      validate_worktree "$WORK_DIR" "$BRANCH" || return 1
+    else
+      ISOLATION_FAILURE="worktree creation failed"
     fi
   else
+    ISOLATION_FAILURE="not a git repo with a committed HEAD"
+  fi
+  if [ -n "$ISOLATION_FAILURE" ]; then
+    if [ "$ALLOW_UNISOLATED" != 1 ]; then
+      echo "ERROR: $ISOLATION_FAILURE — refusing to launch without worktree isolation." >&2
+      echo "Set DELEGATE_ALLOW_UNISOLATED=1 only after explicitly accepting edits in the project root." >&2
+      return 1
+    fi
     WORK_DIR="$PROJECT_ROOT"
-    echo "WARN: not a git repo — worktree isolation skipped, running in project root" >&2
+    echo "WARN: DELEGATE_ALLOW_UNISOLATED=1 — $ISOLATION_FAILURE; agent will edit the project root without code isolation." >&2
+  fi
+  if [ "$ALLOW_UNSAFE" = 1 ]; then
+    echo "WARN: DELEGATE_ALLOW_UNSAFE_FLAGS=1 — runtime approvals/sandbox protections may be bypassed; a worktree is not an OS security boundary." >&2
   fi
 
   # setsid gives the agent its own session/process-group for free when
@@ -252,12 +338,9 @@ EOF
   # `printf %q`, so paths/args containing spaces or special characters
   # survive being written to a file and re-parsed by a fresh bash process.
   local INNER_CMD=""   # the command line the supervisor executes and waits on
-  local CD_LINE=""      # optional `cd "$WORK_DIR"` statement (own line, NOT joined via && —
-                         # backgrounding a `cd X && cmd &` compound makes bash fork a wrapper
-                         # subshell for the whole list, so $! becomes the wrapper's pid instead
-                         # of the real agent's. A bare cd on its own line, then a plain `cmd &`,
-                         # keeps $! pointing at the real process.
-                         # prefix for runtimes with no --dir flag
+  # A foreground cd followed by a plain command & keeps $! on the real CLI.
+  # Backgrounding `cd X && cmd &` would instead record a wrapper subshell.
+  local CD_LINE=""
 
   case "$RUNTIME" in
 
@@ -265,17 +348,18 @@ EOF
       local OPENCODE_HELP OPENCODE_AUTO=""
       OPENCODE_HELP=$(opencode run --help 2>&1) || true
       # Deprecated flag checked first so --auto wins when a version supports both.
-      echo "$OPENCODE_HELP" | grep -q -- "--dangerously-skip-permissions" && OPENCODE_AUTO="--dangerously-skip-permissions"
-      echo "$OPENCODE_HELP" | grep -q -- "--auto" && OPENCODE_AUTO="--auto"
+      if [ "$ALLOW_UNSAFE" = 1 ]; then
+        echo "$OPENCODE_HELP" | grep -q -- "--dangerously-skip-permissions" && OPENCODE_AUTO="--dangerously-skip-permissions"
+        echo "$OPENCODE_HELP" | grep -q -- "--auto" && OPENCODE_AUTO="--auto"
+      fi
       local args=($SETSID nohup opencode run "Execute the task in the handoff document." --file "$TASK_FILE" --dir "$WORK_DIR")
       [ -n "$OPENCODE_AUTO" ] && args+=("$OPENCODE_AUTO")
       INNER_CMD=$(printf '%q ' "${args[@]}")
       ;;
 
     pi)
-      CD_LINE="cd $(printf '%q' "$WORK_DIR")
-"
-      local args=($SETSID nohup pi -p "@$TASK_FILE" "Execute the task in the handoff document." --approve)
+      local args=($SETSID nohup pi -p "@$TASK_FILE" "Execute the task in the handoff document.")
+      [ "$ALLOW_UNSAFE" = 1 ] && args+=(--approve)
       INNER_CMD=$(printf '%q ' "${args[@]}")
       ;;
 
@@ -284,28 +368,24 @@ EOF
       MIMO_HELP=$(mimo run --help 2>&1) || true
       echo "$MIMO_HELP" | grep -q -- "--file" && { MIMO_HAS_FILE=1; MIMO_ARGS+=(--file "$TASK_FILE"); }
       echo "$MIMO_HELP" | grep -q -- "--dir"  && MIMO_ARGS+=(--dir "$WORK_DIR")
-      echo "$MIMO_HELP" | grep -q "dangerously-skip-permissions" && MIMO_ARGS+=(--dangerously-skip-permissions)
+      [ "$ALLOW_UNSAFE" = 1 ] && echo "$MIMO_HELP" | grep -q "dangerously-skip-permissions" && MIMO_ARGS+=(--dangerously-skip-permissions)
       if [ -n "$MIMO_HAS_FILE" ]; then
         local args=($SETSID nohup mimo run "Execute the handoff task." ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"})
       else
-        CD_LINE="cd $(printf '%q' "$WORK_DIR")
-"
         local args=($SETSID nohup mimo run "Read $TASK_FILE and execute the task." ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"})
       fi
       INNER_CMD=$(printf '%q ' "${args[@]}")
       ;;
 
     hermes)
-      CD_LINE="cd $(printf '%q' "$WORK_DIR")
-"
-      local args=($SETSID nohup hermes chat -q "Read $TASK_FILE and execute the task described in it. All changes must stay in $WORK_DIR." --yolo --accept-hooks -Q)
+      local args=($SETSID nohup hermes chat -q "Read $TASK_FILE and execute the task described in it. All changes must stay in $WORK_DIR." -Q)
+      [ "$ALLOW_UNSAFE" = 1 ] && args+=(--yolo --accept-hooks)
       INNER_CMD=$(printf '%q ' "${args[@]}")
       ;;
 
     kimi)
-      CD_LINE="cd $(printf '%q' "$WORK_DIR")
-"
-      local args=($SETSID nohup kimi -p "Read $TASK_FILE and execute the task described in it. All changes must stay in $WORK_DIR." -y)
+      local args=($SETSID nohup kimi -p "Read $TASK_FILE and execute the task described in it. All changes must stay in $WORK_DIR.")
+      [ "$ALLOW_UNSAFE" = 1 ] && args+=(-y)
       INNER_CMD=$(printf '%q ' "${args[@]}")
       ;;
 
@@ -319,13 +399,20 @@ EOF
       local pre_q catq codexq
       pre_q=$(printf '%q ' "${pre[@]}")
       catq=$(printf '%q ' cat "$TASK_FILE")
-      local codex_args=($SETSID nohup codex exec -C "$WORK_DIR" -s danger-full-access --dangerously-bypass-approvals-and-sandbox -)
+      local codex_args=($SETSID nohup codex exec -C "$WORK_DIR")
+      if [ "$ALLOW_UNSAFE" = 1 ]; then
+        codex_args+=(--dangerously-bypass-approvals-and-sandbox)
+      else
+        codex_args+=(-s workspace-write)
+      fi
+      codex_args+=(-)
       codexq=$(printf '%q ' "${codex_args[@]}")
       INNER_CMD="{ $pre_q; $catq; } | $codexq"
       ;;
 
     agy)
-      local args=($SETSID nohup agy --print "Read $TASK_FILE and execute the task described in it. All changes in $WORK_DIR." --add-dir "$WORK_DIR" --dangerously-skip-permissions)
+      local args=($SETSID nohup agy --print "Read $TASK_FILE and execute the task described in it. All changes in $WORK_DIR." --add-dir "$WORK_DIR")
+      [ "$ALLOW_UNSAFE" = 1 ] && args+=(--dangerously-skip-permissions)
       INNER_CMD=$(printf '%q ' "${args[@]}")
       ;;
 
@@ -336,6 +423,9 @@ EOF
       ;;
 
   esac
+
+  CD_LINE="cd $(printf '%q' "$WORK_DIR") || exit 1
+"
 
   # ── Write the supervisor script ──────────────────────────────────────────
   # The supervisor launches the real agent as ITS OWN child (so `wait` yields
@@ -415,6 +505,8 @@ SUP
 
 cmd_status() {
   local TASK_ID="${1:?Usage: delegate.sh status <task-id>}"
+  validate_task_id "$TASK_ID"
+  validate_delegate_paths "$TASK_ID"
   local TASKS_DIR="$PROJECT_ROOT/.delegate/tasks"
   local PID_FILE="$TASKS_DIR/$TASK_ID.pid"
   local LOG_FILE="$TASKS_DIR/$TASK_ID.log"
@@ -495,6 +587,8 @@ cmd_status() {
 
 cmd_verify() {
   local TASK_ID="${1:?Usage: delegate.sh verify <task-id>}"
+  validate_task_id "$TASK_ID"
+  validate_delegate_paths "$TASK_ID"
   local TASKS_DIR="$PROJECT_ROOT/.delegate/tasks"
   local TASK_FILE="$TASKS_DIR/$TASK_ID.md"
   local WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/$TASK_ID"
@@ -538,6 +632,7 @@ cmd_verify() {
 # ── Reconcile ────────────────────────────────────────────────────────────────
 
 cmd_reconcile() {
+  validate_delegate_paths
   local TODO_FILE="$PROJECT_ROOT/TODO.md"
   if [ ! -f "$TODO_FILE" ]; then
     echo "No TODO.md found — nothing to reconcile."
@@ -580,6 +675,7 @@ cmd_reconcile() {
 # ── Next task ID (lock-protected) ─────────────────────────────────────────────
 
 cmd_next_id() {
+  validate_delegate_paths
   local LOCK_DIR="$PROJECT_ROOT/.delegate/todo.lock"
   local STALE_AFTER=30   # seconds — a lock dir older than this is assumed
                          # orphaned by a crashed process, not a live holder.

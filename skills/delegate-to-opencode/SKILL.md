@@ -13,7 +13,7 @@ argument-hint: "[--model <model-id>] <task description>"
 
 # Delegate to OpenCode
 
-Hands a coding task to opencode in the background with full isolation, structured context, and ongoing review.
+Hands a coding task to opencode in the background with git worktree isolation, structured context, and ongoing review.
 
 ## Task
 
@@ -55,14 +55,32 @@ opencode run --help 2>&1 | grep -E "variant|effort"
 # 'effort' not present → never use it
 ```
 
-**Auto-approval flag** — required for unattended background runs. The flag name has changed across opencode versions (`--dangerously-skip-permissions` was replaced by `--auto` as of v1.17.x) — never hardcode one, detect it. Check the deprecated flag first so `--auto` wins when a version supports both:
+**Auto-approval flag** — disabled by default; explicit opt-in only. The flag name has changed across opencode versions (`--dangerously-skip-permissions` was replaced by `--auto` as of v1.17.x) — never hardcode one, detect it. Check the deprecated flag first so `--auto` wins when a version supports both:
 ```bash
 OPENCODE_HELP=$(opencode run --help 2>&1)
 OPENCODE_AUTO_FLAG=""
-echo "$OPENCODE_HELP" | grep -q -- "--dangerously-skip-permissions" && OPENCODE_AUTO_FLAG="--dangerously-skip-permissions"
-echo "$OPENCODE_HELP" | grep -q -- "--auto" && OPENCODE_AUTO_FLAG="--auto"
+[ "${DELEGATE_ALLOW_UNSAFE_FLAGS:-0}" = 1 ] && echo "$OPENCODE_HELP" | grep -q -- "--dangerously-skip-permissions" && OPENCODE_AUTO_FLAG="--dangerously-skip-permissions"
+[ "${DELEGATE_ALLOW_UNSAFE_FLAGS:-0}" = 1 ] && echo "$OPENCODE_HELP" | grep -q -- "--auto" && OPENCODE_AUTO_FLAG="--auto"
 # If neither is present, omit the flag — the run may then block on interactive prompts.
 ```
+
+### Safety defaults
+
+Prefer the tested launcher (`scripts/delegate.sh` when installed in the project).
+For a manual launch, first verify a positive `TASK-N` identifier, real delegation
+directories/state files without symlinks, and that the worktree belongs to this
+repository and the expected runtime/task branch. Refuse an unrelated directory.
+
+Preserve the runtime's permission settings and omit bypass flags by default.
+This skill does not supply an OS sandbox or approvals a runtime lacks.
+Git worktrees separate code edits; they
+do not sandbox processes, network access, credentials or other host files.
+Do not automatically enable approval-bypass flags to recover a stalled run.
+Use `DELEGATE_ALLOW_UNSAFE_FLAGS=1` only after explicit operator opt-in for this
+launch; otherwise omit all auto-approval, YOLO and sandbox-bypass flags. Safe
+background runs may refuse operations or wait for approvals: report that outcome.
+Never silently fall back to the project root. If isolation fails, stop unless
+the operator explicitly set `DELEGATE_ALLOW_UNISOLATED=1` for this launch.
 
 ### Launch
 
@@ -75,7 +93,11 @@ echo "$OPENCODE_HELP" | grep -q -- "--auto" && OPENCODE_AUTO_FLAG="--auto"
 # of the project root, where .delegate/tasks/ actually lives.
 PROJECT_ROOT="$(pwd)"
 WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
-[ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
+if [ ! -d "$WORK_DIR" ]; then
+  [ "${DELEGATE_ALLOW_UNISOLATED:-0}" = 1 ] || { echo "ERROR: worktree missing; refusing unisolated launch" >&2; exit 1; }
+  echo "WARN: explicitly running without code isolation" >&2
+  WORK_DIR="$PROJECT_ROOT"
+fi
 
 TIMEOUT_SECS=<seconds from timeout tier>
 
@@ -105,7 +127,11 @@ echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 # against PROJECT_ROOT or it will fail to resolve once the cwd changes.
 PROJECT_ROOT="$(pwd)"
 WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
-[ ! -d "$WORK_DIR" ] && WORK_DIR="$PROJECT_ROOT"
+if [ ! -d "$WORK_DIR" ]; then
+  [ "${DELEGATE_ALLOW_UNISOLATED:-0}" = 1 ] || { echo "ERROR: worktree missing; refusing unisolated launch" >&2; exit 1; }
+  echo "WARN: explicitly running without code isolation" >&2
+  WORK_DIR="$PROJECT_ROOT"
+fi
 
 TIMEOUT_SECS=<seconds from timeout tier>
 
@@ -115,6 +141,8 @@ TIMEOUT_SECS=<seconds from timeout tier>
 # on spaces in the path. ${arr[@]+...} keeps an empty array safe under `set -u`.
 OMO_HELP=$(oh-my-opencode run --help 2>&1)
 OMO_ARGS=() ; OMO_HAS_DIR=""
+UNSAFE_ARGS=()
+[ "${DELEGATE_ALLOW_UNSAFE_FLAGS:-0}" = 1 ] && UNSAFE_ARGS+=(--yes)
 echo "$OMO_HELP" | grep -q "\-\-file" && OMO_ARGS+=(--file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md")
 echo "$OMO_HELP" | grep -q "\-\-dir" && { OMO_HAS_DIR=1; OMO_ARGS+=(--dir "$WORK_DIR"); }
 
@@ -123,14 +151,15 @@ if [ -n "$OMO_HAS_DIR" ]; then
   nohup oh-my-opencode run \
     "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
     ${OMO_ARGS[@]+"${OMO_ARGS[@]}"} \
-    --yes \
+    ${UNSAFE_ARGS[@]+"${UNSAFE_ARGS[@]}"} \
     > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 else
   # No --dir flag: cd into the worktree so isolation still holds.
-  cd "$WORK_DIR" && nohup oh-my-opencode run \
+  cd "$WORK_DIR" || exit 1
+  nohup oh-my-opencode run \
     "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
     ${OMO_ARGS[@]+"${OMO_ARGS[@]}"} \
-    --yes \
+    ${UNSAFE_ARGS[@]+"${UNSAFE_ARGS[@]}"} \
     > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 fi
 

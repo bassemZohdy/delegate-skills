@@ -17,8 +17,12 @@ opencode run — Execute tasks with opencode
 Options:
 --dir <path>     Working directory
 --file <path>    Attach a file
---auto           Auto-approve permissions that are not explicitly denied (dangerous!)
 EOF
+  if [ "${MOCK_OPENCODE_LEGACY:-0}" = 1 ]; then
+    echo "--dangerously-skip-permissions Skip approvals"
+  else
+    echo "--auto Auto-approve permissions"
+  fi
   exit 0
 fi
 
