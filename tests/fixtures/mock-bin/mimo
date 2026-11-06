@@ -12,6 +12,7 @@ mimo run — Execute tasks with mimo
 
 Options:
 --dangerously-skip-permissions   Skip prompts
+-c, --continue                   Continue the last session
 EOF
   [ "${MOCK_MIMO_HAS_DIR:-1}" = 1 ] && echo "--dir <path> Working directory"
   if [ "${MOCK_MIMO_HAS_FILE:-0}" = "1" ]; then

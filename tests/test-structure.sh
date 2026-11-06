@@ -481,9 +481,13 @@ yaml.safe_load(parts[1])
       grep -qE 'PROJECT_ROOT.*=.*\$\(pwd\)|PROJECT_ROOT="\$\(pwd\)"' "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md captures PROJECT_ROOT before cd" \
         || fail "skills/$skill/SKILL.md missing PROJECT_ROOT capture"
-      grep -qE -- '--continue| -C ' "$SKILL_FILE" \
-        && pass "skills/$skill/SKILL.md retry uses --continue / -C" \
-        || fail "skills/$skill/SKILL.md retry missing --continue / -C"
+      # kimi's continue flag is lowercase -c; `-C` does not exist in kimi-code.
+      awk '/^### Retry/,0' "$SKILL_FILE" | grep -qE -- '^[[:space:]]+-c ' \
+        && pass "skills/$skill/SKILL.md retry uses -c (continue)" \
+        || fail "skills/$skill/SKILL.md retry missing -c (continue)"
+      awk '/^### Retry/,0' "$SKILL_FILE" | grep -qE -- '^[[:space:]]+-C ' \
+        && fail "skills/$skill/SKILL.md retry uses nonexistent kimi flag -C" \
+        || pass "skills/$skill/SKILL.md retry does not use nonexistent -C"
       ;;
 
     delegate-to-codex)
@@ -768,6 +772,58 @@ for skill in "${SKILLS[@]}"; do
     pass "skills/$skill/SKILL.md uses WORK_DIR (count=$count refs)"
   fi
 done
+
+# ─── Bundled launcher (self-contained skills) ─────────────────────────────────
+# Every skill ships the tested launcher so the preferred path works from a
+# single-skill install, without copying anything into the user's project.
+for skill in "${SKILLS[@]}"; do
+  B="$PROJECT_ROOT/skills/$skill/scripts/delegate.sh"
+  if [ -f "$B" ] && cmp -s "$B" "$DELEGATE_SH"; then
+    pass "skills/$skill/scripts/delegate.sh bundled and identical to helpers/scripts/delegate.sh"
+  else
+    fail "skills/$skill/scripts/delegate.sh missing or stale (run helpers/scripts/sync-skills.sh)"
+  fi
+  grep -q 'bash "\$DELEGATE_SH" ' "$PROJECT_ROOT/skills/$skill/SKILL.md" \
+    && pass "skills/$skill/SKILL.md launches through \$DELEGATE_SH" \
+    || fail "skills/$skill/SKILL.md does not use the bundled launcher"
+  grep -q -- '--continue' "$PROJECT_ROOT/skills/$skill/SKILL.md" \
+    && pass "skills/$skill/SKILL.md documents launcher --continue retry" \
+    || fail "skills/$skill/SKILL.md missing launcher --continue retry"
+done
+
+# Retry blocks must record the new PID and re-arm the watchdog; otherwise the
+# next poll checks the dead PID of the previous attempt.
+for rt in opencode pi mimo hermes kimi codex agy; do
+  F="$PROJECT_ROOT/skills/delegate-to-$rt/SKILL.md"
+  retry=$(awk '/^### Retry/,0' "$F")
+  echo "$retry" | grep -q 'TASK-N.pid' && echo "$retry" | grep -q 'watchdog.pid' \
+    && pass "delegate-to-$rt manual retry records PID and re-arms watchdog" \
+    || fail "delegate-to-$rt manual retry does not record PID / re-arm watchdog"
+done
+
+# codex `exec resume` rejects -C/--cd and -s/--sandbox (verified against
+# codex-cli 0.167 `codex exec resume --help`).
+if awk '/^### Retry/,0' "$PROJECT_ROOT/skills/delegate-to-codex/SKILL.md" | grep -E 'resume --last' -A3 | grep -qE -- ' -C | -s |CODEX_SECURITY_ARGS'; then
+  fail "delegate-to-codex retry passes -C/-s to 'codex exec resume' (unsupported)"
+else
+  pass "delegate-to-codex retry avoids -C/-s on 'codex exec resume'"
+fi
+
+# Distributed files must not point at repository-only paths that a
+# single-skill install does not have.
+if grep -nE '\(?`?(docs|helpers)/[A-Za-z]' "$WORKFLOW" | grep -v 'helpers/scripts/sync' ; then
+  fail "workflow.md references repository-only docs/ or helpers/ paths"
+else
+  pass "workflow.md has no repository-only path references"
+fi
+
+# delegate-to-any must not contain markdown links that resolve inside its own
+# folder to sibling skills (the bug: `delegate-to-pi/SKILL.md` relative link).
+if grep -qE '\]\(delegate-to-[a-z]+/SKILL\.md\)' "$PROJECT_ROOT/skills/delegate-to-any/SKILL.md"; then
+  fail "delegate-to-any has broken relative links to sibling skills"
+else
+  pass "delegate-to-any has no broken sibling-skill links"
+fi
 
 # ─── Standalone summary ───────────────────────────────────────────────────────
 

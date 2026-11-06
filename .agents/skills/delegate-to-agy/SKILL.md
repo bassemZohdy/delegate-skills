@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and agy on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.3.1
+  version: 1.4.0
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -39,16 +39,23 @@ fi
 
 ### Validate Model and Flags
 
-**Model** — Agy does not expose a `--model` flag at the CLI level; model selection is configured in its settings. If the user requests a specific model, check Agy's config documentation — it cannot be passed via CLI.
+**Model** — only pass `--model` if the user explicitly requested a model. If they did, verify the exact ID:
+```bash
+agy models 2>&1 | grep -i "<requested-model>"
+# Use the full ID from that output. If nothing matches, tell the user and abort.
+```
+If no model was requested, omit `--model` entirely — agy uses its configured default. (Older agy builds had no `--model` flag; if `agy --help` does not list it, the model is config-only.)
 
-**Flags** — Agy has no `--file` or `--dir` flag. The handoff document is referenced by absolute path in the prompt so the agent reads it via its own file tools. Agy supports `--add-dir` to add extra directories to its workspace — pass the worktree path this way. Agy runs from the current working directory; stay in the project root and use `--add-dir` for the worktree.
+**Flags** — Agy has no `--file` or `--dir` flag. The handoff document is referenced by absolute path in the prompt so the agent reads it via its own file tools. Agy's workspace is its current working directory, so `cd` into the worktree before launching (capture `PROJECT_ROOT` first) and also pass the worktree with `--add-dir`.
 
 ```bash
-agy --help 2>&1 | grep -E "print|continue|skip-permissions|add-dir"
+agy --help 2>&1 | grep -E "print|continue|skip-permissions|add-dir|model|sandbox"
 # --print / -p            → non-interactive single prompt (required for background)
 # --continue / -c         → continue the most recent conversation
-# --dangerously-skip-permissions → auto-approve all tool requests
+# --model                 → model for this session (verify with `agy models`)
+# --dangerously-skip-permissions → auto-approve all tool requests (explicit opt-in only)
 # --add-dir               → add directory to workspace (repeat for multiple dirs)
+# --sandbox               → terminal restrictions (optional hardening)
 ```
 
 ### Safety defaults
@@ -71,6 +78,16 @@ the operator explicitly set `DELEGATE_ALLOW_UNISOLATED=1` for this launch.
 
 ### Launch
 
+**Preferred — the bundled launcher** (`$DELEGATE_SH`, resolved at the top of [`workflow.md`](workflow.md)):
+
+```bash
+bash "$DELEGATE_SH" agy TASK-N "$TIMEOUT_SECS"     # append --model "<id>" only if the user asked for a model
+```
+
+It verifies (or creates) the worktree, applies exactly the flags described in this file, records the real PID, exit code and a PID-reuse fingerprint, and arms a watchdog that cancels itself when the agent exits. Relay its `PID=`, `LOG=` and `WORK_DIR=` lines to the user. Use the manual block below only when no launcher is available.
+
+**Manual fallback:**
+
 ```bash
 PROJECT_ROOT="$(pwd)"
 WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
@@ -85,6 +102,8 @@ TIMEOUT_SECS=<seconds from timeout tier>
 UNSAFE_ARGS=()
 [ "${DELEGATE_ALLOW_UNSAFE_FLAGS:-0}" = 1 ] && UNSAFE_ARGS+=(--dangerously-skip-permissions)
 
+# Add --model "<id>" only if the user specified one and it was verified above.
+cd "$WORK_DIR" || exit 1
 nohup agy \
   --print "Read $TASK_FILE and execute the task described in it. All file changes must be made inside $WORK_DIR. Follow all instructions exactly." \
   --add-dir "$WORK_DIR" \
@@ -115,14 +134,30 @@ echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 
 Tell the user: task ID, working directory (`$WORK_DIR`), timeout deadline.
 
-### Retry (Step 5 Case 2)
+### Retry (Step 5 Cases 2–4)
 
-When self-healing retries with `--continue` (PROJECT_ROOT and WORK_DIR already set from launch):
+With the launcher (it never resets the retry counter and rotates the old log to `TASK-N.log.prev`):
 ```bash
+bash "$DELEGATE_SH" stop TASK-N                              # no-op if it already exited
+bash "$DELEGATE_SH" agy TASK-N "$TIMEOUT_SECS" --continue   # resumes the previous session in the worktree
+```
+
+Manual fallback (reuse the variables from the initial launch):
+```bash
+# The previous attempt must already be stopped (Step 5 Case 2). Cancel its
+# watchdog, keep its log for diagnosis, then relaunch and re-arm.
+kill "$(cat "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid" 2>/dev/null)" 2>/dev/null
+mv -f "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" "$PROJECT_ROOT/.delegate/tasks/TASK-N.log.prev" 2>/dev/null
+cd "$WORK_DIR" || exit 1
 nohup agy \
   --continue \
   --print "Continue the task from where you left off. Task file: $TASK_FILE" \
   --add-dir "$WORK_DIR" \
   ${UNSAFE_ARGS[@]+"${UNSAFE_ARGS[@]}"} \
   > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
+TASK_PID=$!
+echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
+nohup bash -c 'sleep "$1"; kill -TERM "$2" 2>/dev/null; sleep 30; kill -KILL "$2" 2>/dev/null' \
+  _ "$TIMEOUT_SECS" "$TASK_PID" > /dev/null 2>&1 &
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```

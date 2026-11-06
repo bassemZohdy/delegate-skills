@@ -84,14 +84,19 @@ Create `.delegate/tasks/TASK-N.md` (agent's only context — 200–500 tokens):
 
 ### Step 5 — Launch Agent
 
-If scripts/delegate.sh exists in the project:
+Locate the launcher (`delegate.sh`) once, in this order: `scripts/delegate.sh`
+in the project; the copy bundled with any installed delegate skill (for example
+`~/.agents/skills/delegate-to-any/scripts/delegate.sh` or
+`~/.claude/skills/delegate-to-any/scripts/delegate.sh`); or
+`helpers/scripts/delegate.sh` in a checkout of this repository. Below,
+`$DELEGATE_SH` means that path. Always run it from the project root.
+
 ```
-bash scripts/delegate.sh <runtime> TASK-N <timeout-seconds>
+bash $DELEGATE_SH <runtime> TASK-N <timeout-seconds>          # add --model <id> only if asked
 ```
 
-If the helper is absent, use the safe manual launch instructions from the
-installed runtime skill (`skills/delegate-to-<runtime>/SKILL.md`) or install the
-helper first. Keep its worktree verification, permission defaults and watchdog
+If no launcher is available, use the safe manual launch instructions from the
+installed runtime skill (`skills/delegate-to-<runtime>/SKILL.md`). Keep its worktree verification, permission defaults and watchdog
 behavior; do not improvise approval-bypass flags to make a blocked run succeed.
 
 Supported helper runtimes: opencode, pi, mimo, hermes, kimi, codex and agy.
@@ -106,15 +111,15 @@ Tell the user: task ID, runtime, log path, worktree, expected timeout.
 
 Poll every ~20% of the timeout interval.
 
-Check liveness: `kill -0 $(cat .delegate/tasks/TASK-N.pid) 2>/dev/null && echo running || echo done`
+Check status: `bash $DELEGATE_SH status TASK-N` (prints `STATE=`, `EXITCODE=`, `LOG_SIZE=`, `RETRIES=`)
 Read log: `tail -30 .delegate/tasks/TASK-N.log`
-Check log size: `wc -c < .delegate/tasks/TASK-N.log`
+Without the launcher: `kill -0 $(cat .delegate/tasks/TASK-N.pid) 2>/dev/null && echo running || echo done`, and compare `wc -c < .delegate/tasks/TASK-N.log` between polls.
 
-Self-heal rules:
-- If the process exits with a tiny log (< 500 bytes): read the error, fix the command, retry (max 2×)
-- If the log stops growing between polls: the agent stalled — kill it and retry with --continue
+Self-heal rules (increment `.delegate/tasks/TASK-N.retries` before every retry; max 2):
+- If the process exits with a tiny log (< 500 bytes; `STATE=LAUNCH_FAILED`): read the error, fix the command, relaunch
+- If the log stops growing between polls (`STATE=STALLED`): `bash $DELEGATE_SH stop TASK-N`, then `bash $DELEGATE_SH <runtime> TASK-N <timeout> --continue`
 - If the process exits cleanly but the output file is missing: retry with --continue
-- If verification fails: retry with --continue and include notes on what failed
+- If verification fails (`bash $DELEGATE_SH verify TASK-N` runs the handoff's fenced bash block): retry with --continue and include notes on what failed
 - If all retries exhausted: mark status: failed in TODO.md and report the log tail
 
 ### Step 7 — Complete
@@ -142,11 +147,11 @@ For tools with custom slash commands (Continue.dev, Cursor, etc.), a shorter ver
 ```
 You are delegating a coding task. Follow the delegation protocol:
 1. Check git status. If dirty, ask the user.
-2. Find the next TASK-N from TODO.md (or start at TASK-1).
+2. Get the next TASK-N: `bash $DELEGATE_SH next-id` (lock-protected), or max TASK number in TODO.md + 1.
 3. Append the TODO.md entry and commit it: `git add TODO.md && git commit -m "TASK-N: add ledger entry"`.
 4. Create worktree: `git worktree add .delegate/worktrees/TASK-N -b <runtime>/TASK-N`
 5. Write .delegate/tasks/TASK-N.md as a 200-500 token cold-start briefing.
-6. Launch: `bash scripts/delegate.sh <runtime> TASK-N 1800`
+6. Launch: `bash $DELEGATE_SH <runtime> TASK-N 1800` (`$DELEGATE_SH`: the project's `scripts/delegate.sh`, or `scripts/delegate.sh` inside an installed delegate skill folder).
 7. Report the task ID, log path, and expected completion time.
 
 Task to delegate: {input}

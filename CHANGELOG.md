@@ -7,7 +7,97 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-11-06
+
+Review pass after the fail-closed delegation PR: the tested launcher now ships
+inside every skill, the self-healing loop actually terminates, and every runtime
+flag was re-verified against the installed CLIs' `--help` (opencode 1.18.32,
+pi 1.0.0, mimo 0.1.13, Hermes Agent 0.20.4, kimi-code 0.34.0, codex-cli 0.167.0,
+agy 1.4.9).
+
+### Fixed
+
+- **Retries never ran out with the launcher**: every launch rewrote
+  `TASK-N.retries` to 0, so after the caller incremented it a relaunch reset it
+  and the "RETRIES >= 2 → failed" rule could never trip. The counter is now
+  created only on first launch.
+- **`next-id` could hand two concurrent callers the same id**: the lock covered
+  only the read, while the ledger block is appended after `next-id` returns. Ids
+  are now also reserved (`.delegate/tasks/TASK-N.reserved`) inside the lock, and
+  existing handoffs/worktrees count toward the max.
+- **`verify` reported PASS when an earlier check failed**: the block ran without
+  errexit, so only its last line's status counted. It now runs under
+  `set -e -o pipefail` with stdin closed; ```` ```sh ```` fences are accepted too.
+- **Manual retry blocks lost track of the agent**: none recorded the relaunched
+  PID or re-armed the watchdog, so the next poll inspected the dead previous
+  attempt. All seven now cancel the old watchdog, rotate the log, record the new
+  PID and arm a new watchdog.
+- **kimi retry used a nonexistent `-C` flag** — kimi-code's continue flag is `-c`.
+- **codex retry passed `-C` and `-s` to `codex exec resume`**, which accepts
+  neither. It now `cd`s into the worktree (`resume --last` is cwd-filtered) and
+  sets the sandbox via `-c 'sandbox_mode="workspace-write"'`.
+- **First delegation dirtied the tree for every later one**: `.delegate/` was
+  never ignored, so Step 0's clean-tree check always fired. The launcher and the
+  manual Step 3 add it to the untracked `.git/info/exclude`.
+- **`kill_tree` aborted on Git Bash** under `set -e` (MSYS `ps` rejects `-o`).
+  It was previously unreachable; the new `stop` subcommand exercises it.
+- `status` could report a recycled PID as a still-running agent; it now requires
+  no recorded exit code and a matching fingerprint. Same for `reconcile`.
+- Relaunching while the previous attempt was alive started two agents in one
+  worktree; it is now refused. Per-attempt state (pid, exit code, fingerprint,
+  markers) is cleared on relaunch so the new attempt is never misread.
+- `delegate-to-any` linked sibling skills as `delegate-to-pi/SKILL.md` — a path
+  inside its own folder that never exists. Links now point to `../delegate-to-*`
+  and the launcher is the documented path for single-skill installs.
+- agy manual launch ran from the project root (agy's workspace is its cwd); it
+  now `cd`s into the worktree. mimo's manual launch does the same.
+- The Hermes helper marked *every* in-progress task completed (`sed -i
+  's/status: in_progress/status: completed/' TODO.md`) and hardcoded an opencode
+  command for stall retries of any runtime.
+- The distributed `workflow.md` referenced `docs/usage.md` and `helpers/` paths
+  that do not exist in an installed skill; timeout tiers and merge commands are
+  now inlined.
+
+### Added
+
+- `delegate.sh` is bundled into every skill folder as `scripts/delegate.sh`
+  (synced and byte-checked like `workflow.md`), resolved by the workflow as
+  `$DELEGATE_SH`; a project-local `scripts/delegate.sh` still takes precedence.
+- Launch options `--continue` (resume the runtime's previous session in the
+  worktree, mapped per runtime) and `--model ID` (validated, mapped per runtime).
+- `delegate.sh stop TASK-N` — fingerprint-guarded TERM→KILL of the agent tree.
+- `status` states `TIMED_OUT` and `STOPPED`; a nonzero exit with < 500 bytes of
+  output is `LAUNCH_FAILED` (Case 1) with its real `EXITCODE=`.
+- Timeout signals the agent's whole process group when it verifiably leads one.
+- agy `--model` support (verify with `agy models`); `mimo models` validation.
+- Regression tests for each fix above (behavior + structure), each confirmed to
+  fail against the previous files.
+- Upstream tracking: `.github/upstream-sources.yml` lists every runtime's docs,
+  changelog, verified version and the flags `delegate.sh` depends on.
+  `tests/check-cli-contract.py` checks installed CLIs' `--help` against it
+  (DRIFT vs BROKEN install vs missing), and `tests/test-upstream.sh` keeps the
+  manifest consistent with AGENTS.md and the launcher.
+- CI `cli-contract.yml` (weekly): installs the latest npm releases and opens or
+  updates one deduplicated `upstream-change` issue on drift; the job that runs
+  npm install scripts holds a read-only token.
+- CI `upstream-watch.md` (weekly GitHub Agentic Workflow, engine `claude`):
+  validates the source URLs, reads changelogs since the verified version and
+  files up to 5 evidenced issues through `safe-outputs` (read-only otherwise).
+  Needs `gh aw compile` and an `ANTHROPIC_API_KEY` secret.
+- kimi-code ≥ 2 support: print mode rejects `-y`, so the launcher version-gates
+  it and warns that print mode auto-approves. pi `--approve` is help-detected.
+
 ### Changed
+
+- pi documentation: `--approve` trusts project-local pi files; it does not
+  approve tool calls — pi never prompts before running tools. Removed the
+  nonexistent pi `--variant`; `--thinking` documented as a level for pi and as a
+  display-only boolean for opencode/mimo.
+- Hermes `-Q` documented as the programmatic mode it is (always used), not an opt-in.
+- AGENTS.md CLI table corrected (kimi `-c`, agy `--model`, codex resume limits,
+  model-list commands) and stamped with the CLI versions it was verified against.
+
+### Changed (fail-closed delegation, PR #1)
 
 - Launches now refuse worktree failures by default. Project-root execution
   requires the separate `DELEGATE_ALLOW_UNISOLATED=1` opt-in and emits a warning.
@@ -20,7 +110,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Align manual skill instructions and the `.agents/skills/` distribution with
   those defaults, and provide a canonical-source mirror sync/check command.
 
-### Added
+### Added (fail-closed delegation, PR #1)
 
 - Mock process/filesystem safety regressions and Ubuntu/Windows Git Bash CI,
   including worktree failure, unsafe opt-ins, path traversal, foreign worktrees,

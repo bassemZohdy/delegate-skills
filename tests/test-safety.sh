@@ -211,6 +211,44 @@ test_mimo_file_without_dir() {
   wait_for_mock_file "$sandbox/.delegate/tasks/TASK-67.exitcode"
 }
 
+# kimi-code >= 2 rejects --yolo/--auto with -p, and print mode is already
+# auto-permission: never pass -y there, and always warn the operator.
+test_kimi2_print_mode() {
+  local mode="$1" sandbox
+  sandbox=$(mktemp -d)
+  trap "cleanup_sandbox '$sandbox'" RETURN
+  init_git_repo "$sandbox"
+  create_handoff "$sandbox" TASK-69
+  mkdir -p "$sandbox/bin" "$sandbox/mockout"
+  cp "$FIXTURES/kimi" "$sandbox/bin/"
+  chmod +x "$sandbox/bin/kimi"
+  MOCK_KIMI_VERSION=2.5.2 PATH="$sandbox/bin:$PATH" DELEGATE_ALLOW_UNSAFE_FLAGS="$mode"     MOCK_DURATION=0 MOCK_OUT_DIR="$sandbox/mockout"     bash "$DELEGATE_SH" kimi TASK-69 30 > "$sandbox/output" 2>&1 || return 1
+  snapshot_watchdog_children "$sandbox"
+  wait_for_mock_file "$sandbox/mockout/kimi.args" || return 1
+  grep -Eqx -- '-y|--yolo|--auto' "$sandbox/mockout/kimi.args" && return 1
+  grep -qx -- -p "$sandbox/mockout/kimi.args" || return 1
+  grep -q 'never asks for approval' "$sandbox/output" || return 1
+  wait_for_mock_file "$sandbox/.delegate/tasks/TASK-69.exitcode"
+}
+
+# pi --approve is help-detected: a pi without it must still launch, flagless.
+test_pi_without_approve() {
+  local sandbox
+  sandbox=$(mktemp -d)
+  trap "cleanup_sandbox '$sandbox'" RETURN
+  init_git_repo "$sandbox"
+  create_handoff "$sandbox" TASK-70
+  mkdir -p "$sandbox/bin" "$sandbox/mockout"
+  cp "$FIXTURES/pi" "$sandbox/bin/"
+  chmod +x "$sandbox/bin/pi"
+  MOCK_PI_HAS_APPROVE=0 PATH="$sandbox/bin:$PATH" DELEGATE_ALLOW_UNSAFE_FLAGS=1     MOCK_DURATION=0 MOCK_OUT_DIR="$sandbox/mockout"     bash "$DELEGATE_SH" pi TASK-70 30 > "$sandbox/output" 2>&1 || return 1
+  snapshot_watchdog_children "$sandbox"
+  wait_for_mock_file "$sandbox/mockout/pi.args" || return 1
+  grep -qx -- --approve "$sandbox/mockout/pi.args" && return 1
+  grep -q 'no --approve flag' "$sandbox/output" || return 1
+  wait_for_mock_file "$sandbox/.delegate/tasks/TASK-70.exitcode"
+}
+
 test_project_path_with_spaces() {
   local fixture sandbox
   fixture=$(mktemp -d)
@@ -258,6 +296,10 @@ for kind in directory worktree handoff logfile; do
 done
 test_legacy_opencode_optin && pass "Legacy OpenCode approval bypass is opt-in only" || fail "Legacy OpenCode approval bypass is opt-in only"
 test_mimo_file_without_dir && pass "MiMo file support without --dir enters verified worktree" || fail "MiMo file support without --dir enters verified worktree"
+for mode in 0 1; do
+  test_kimi2_print_mode "$mode" && pass "kimi >= 2: no -y with -p, auto-permission warned (opt-in=$mode)" || fail "kimi >= 2: no -y with -p, auto-permission warned (opt-in=$mode)"
+done
+test_pi_without_approve && pass "pi without --approve launches flagless with a warning" || fail "pi without --approve launches flagless with a warning"
 test_project_path_with_spaces && pass "Quoted project/handoff paths with spaces work" || fail "Quoted project/handoff paths with spaces work"
 cd "$PROJECT_ROOT"
 bash "$PROJECT_ROOT/helpers/scripts/sync-skills.sh" --check && pass "Canonical/mirrored skill distributions match" || fail "Canonical/mirrored skill distributions match"

@@ -2,11 +2,13 @@
 # scripts/delegate.sh — tool-agnostic delegation launcher, monitor, and helpers
 #
 # Subcommands:
-#   delegate.sh <runtime> <task-id> [timeout-secs]   Launch a task (default/legacy form)
+#   delegate.sh <runtime> <task-id> [timeout-secs] [--continue] [--model ID]
+#                                                    Launch (or resume) a task
 #   delegate.sh status <task-id>                     Machine-readable status
+#   delegate.sh stop <task-id>                       Terminate the task's agent tree safely
 #   delegate.sh verify <task-id>                     Run the handoff's verification block
-#   delegate.sh reconcile                            Report stale in_progress TODO.md entries
-#   delegate.sh next-id                               Atomically allocate the next TASK-N
+#   delegate.sh reconcile                           Report stale in_progress TODO.md entries
+#   delegate.sh next-id                              Atomically allocate + reserve the next TASK-N
 #
 # ── Launch ───────────────────────────────────────────────────────────────────
 # Handles the mechanical parts of delegation:
@@ -28,14 +30,18 @@
 #      process tree instead of a single PID
 #
 # Usage:
-#   bash delegate.sh <runtime> <task-id> [timeout-seconds]
+#   bash delegate.sh <runtime> <task-id> [timeout-seconds] [--continue] [--model ID]
 #
 # Arguments:
 #   runtime         — opencode | pi | mimo | hermes | kimi | codex | agy
 #   task-id         — TASK-N (e.g. TASK-1, TASK-3)
 #   timeout-seconds — seconds before the watchdog kills the agent (default: 1800)
+#   --continue      — resume the runtime's previous session in the same worktree
+#                     (self-healing retry) instead of starting a fresh one
+#   --model ID      — pass an explicit model to the runtime (only when the user
+#                     asked for one; otherwise the runtime's configured default)
 #
-# The handoff document must already exist at:
+# Run it from the project root. The handoff document must already exist at:
 #   .delegate/tasks/<task-id>.md
 #
 # Output (printed to stdout, one per line):
@@ -45,12 +51,20 @@
 #
 # Exit codes:
 #   0 = agent launched successfully
-#   1 = runtime not found, handoff missing, or unsupported runtime
+#   1 = runtime not found, handoff missing, unsupported runtime, invalid
+#       input, isolation failure, or the task's agent is still running
 #
 # ── Files written under .delegate/tasks/ ────────────────────────────────────
 #   TASK-N.pid              real agent process id — signal/inspect this one
-#   TASK-N.log               agent's combined stdout/stderr
-#   TASK-N.retries           self-healing retry counter (maintained by the caller)
+#   TASK-N.log               agent's combined stdout/stderr (previous attempt's
+#                            log is rotated to TASK-N.log.prev on relaunch)
+#   TASK-N.retries           self-healing retry counter (created as 0 on first
+#                            launch, never reset by a relaunch; the caller
+#                            increments it)
+#   TASK-N.reserved          marker written by `next-id` so concurrent callers
+#                            never receive the same id
+#   TASK-N.timedout          written by the supervisor when the timeout fired
+#   TASK-N.stopped           written by `stop` (deliberate termination)
 #   TASK-N.watchdog.pid      supervisor process id (kill this to force-abandon
 #                            a task early; not needed on normal completion —
 #                            the supervisor cancels its own timer)
@@ -71,12 +85,28 @@ PROJECT_ROOT="$(pwd -P)"
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  delegate.sh <runtime> <task-id> [timeout-secs]   Launch a task
+  delegate.sh <runtime> <task-id> [timeout-secs] [--continue] [--model ID]
+                                                   Launch (or resume) a task
   delegate.sh status <task-id>                     Print machine-readable status
+  delegate.sh stop <task-id>                       Terminate the task's agent process tree
   delegate.sh verify <task-id>                     Run the handoff's verification block
   delegate.sh reconcile                            Report stale in_progress TODO.md entries
-  delegate.sh next-id                               Allocate the next TASK-N (lock-protected)
+  delegate.sh next-id                              Allocate + reserve the next TASK-N (lock-protected)
 EOF
+}
+
+# Keep .delegate/ (task logs, PID files, nested worktrees) out of `git status`
+# in the main tree without touching any tracked file: the repo-local exclude
+# file is never committed. Without this, the first delegation leaves an
+# untracked `.delegate/` behind and every later Step 0 sees a dirty tree.
+ensure_delegate_ignored() {
+  local exclude
+  exclude=$(git -C "$PROJECT_ROOT" rev-parse --git-path info/exclude 2>/dev/null) || return 0
+  [ -n "$exclude" ] || return 0
+  case "$exclude" in /*|[A-Za-z]:/*) ;; *) exclude="$PROJECT_ROOT/$exclude" ;; esac
+  mkdir -p "$(dirname "$exclude")" 2>/dev/null || return 0
+  grep -qxF '.delegate/' "$exclude" 2>/dev/null && return 0
+  printf '\n# delegate-skills runtime artifacts\n.delegate/\n' >> "$exclude" 2>/dev/null || true
 }
 
 # Strict identifiers keep all state files and branch names beneath .delegate.
@@ -183,6 +213,23 @@ pid_fingerprint() {
   printf '%s' "$out"
 }
 
+# True only when the task's recorded agent is still running: the PID is live,
+# the supervisor has not recorded an exit code for it, and (when a fingerprint
+# was recorded) the live process still matches it. A recycled PID that now
+# belongs to some unrelated process must never read as "agent still running".
+task_agent_alive() {
+  local task_id="$1" pid="$2" tasks_dir="$PROJECT_ROOT/.delegate/tasks"
+  [ -n "$pid" ] && pid_alive "$pid" || return 1
+  [ -f "$tasks_dir/$task_id.exitcode" ] && return 1
+  if [ -s "$tasks_dir/$task_id.fingerprint" ]; then
+    local stored current
+    stored=$(cat "$tasks_dir/$task_id.fingerprint" 2>/dev/null) || stored=""
+    current=$(pid_fingerprint "$pid")
+    [ -n "$current" ] && [ -n "$stored" ] && [ "$current" != "$stored" ] && return 1
+  fi
+  return 0
+}
+
 # Terminate a task's process tree, never the wrong one.
 #   $1 = task-id   $2 = signal (TERM|KILL, default TERM)
 kill_tree() {
@@ -218,8 +265,10 @@ kill_tree() {
     pkill "-$sig" -P "$pid" 2>/dev/null || true
   else
     local children
-    children=$(ps -eo pid=,ppid= 2>/dev/null | awk -v p="$pid" '$2==p {print $1}')
-    [ -z "$children" ] && children=$(_ps_children_fixed "$pid")
+    # `|| true`: MSYS ps rejects -o, and under errexit+pipefail that failure
+    # would abort the whole kill instead of falling through to the fallback.
+    children=$(ps -eo pid=,ppid= 2>/dev/null | awk -v p="$pid" '$2==p {print $1}') || true
+    [ -n "$children" ] || children=$(_ps_children_fixed "$pid") || true
     if [ -n "$children" ]; then
       printf '%s\n' "$children" | while read -r child; do kill "-$sig" "$child" 2>/dev/null || true; done
     fi
@@ -238,9 +287,26 @@ kill_tree() {
 # ── Launch ───────────────────────────────────────────────────────────────────
 
 cmd_launch() {
-  local RUNTIME="${1:?Usage: delegate.sh <runtime> <task-id> [timeout-secs]}"
-  local TASK_ID="${2:?Usage: delegate.sh <runtime> <task-id> [timeout-secs]}"
-  local TIMEOUT_SECS="${3:-1800}"
+  local RUNTIME="${1:?Usage: delegate.sh <runtime> <task-id> [timeout-secs] [--continue] [--model ID]}"
+  shift
+  local TASK_ID="" TIMEOUT_SECS="" CONTINUE=0 MODEL="" MODEL_SET=0 HAVE_TIMEOUT=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --continue) CONTINUE=1 ;;
+      --model)
+        [ $# -ge 2 ] || { echo "ERROR: --model requires a value." >&2; return 1; }
+        MODEL="$2"; MODEL_SET=1; shift ;;
+      --model=*) MODEL="${1#--model=}"; MODEL_SET=1 ;;
+      *)
+        if [ -z "$TASK_ID" ]; then TASK_ID="$1"
+        elif [ "$HAVE_TIMEOUT" = 0 ]; then TIMEOUT_SECS="$1"; HAVE_TIMEOUT=1
+        else echo "ERROR: unexpected argument: $1" >&2; usage; return 1
+        fi ;;
+    esac
+    shift
+  done
+  [ -n "$TASK_ID" ] || { usage; return 1; }
+  [ "$HAVE_TIMEOUT" = 1 ] || TIMEOUT_SECS=1800
 
   local TASKS_DIR="$PROJECT_ROOT/.delegate/tasks"
   local TASK_FILE="$TASKS_DIR/$TASK_ID.md"
@@ -252,6 +318,7 @@ cmd_launch() {
   local FP_FILE="$TASKS_DIR/$TASK_ID.fingerprint"
   local PGID_FILE="$TASKS_DIR/$TASK_ID.pgid"
   local SUP_FILE="$TASKS_DIR/$TASK_ID.supervisor.sh"
+  local TIMEDOUT_FILE="$TASKS_DIR/$TASK_ID.timedout"
 
   validate_task_id "$TASK_ID"
   validate_delegate_paths "$TASK_ID"
@@ -259,6 +326,12 @@ cmd_launch() {
     echo "ERROR: timeout-secs must be a positive decimal integer." >&2
     return 1
   }
+  # Model ids look like "gpt-5", "anthropic/claude-sonnet-4", "sonnet:high".
+  # Refuse anything that could be parsed as a flag or carry shell metacharacters.
+  if [ "$MODEL_SET" = 1 ] && ! [[ "$MODEL" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$ ]]; then
+    echo "ERROR: --model must be a plain model id (letters, digits, . _ : / @ + -)." >&2
+    return 1
+  fi
   local ALLOW_UNISOLATED="${DELEGATE_ALLOW_UNISOLATED:-0}"
   local ALLOW_UNSAFE="${DELEGATE_ALLOW_UNSAFE_FLAGS:-0}"
   case "$ALLOW_UNISOLATED:$ALLOW_UNSAFE" in 0:0|0:1|1:0|1:1) ;; *)
@@ -271,7 +344,7 @@ cmd_launch() {
     cat >&2 <<EOF
 ERROR: Handoff document not found: $TASK_FILE
 Write the handoff document before calling delegate.sh.
-See skills/shared/workflow.md Steps 2-3 for the required format.
+See the skill's workflow.md, Step 3, for the required format.
 EOF
     exit 1
   fi
@@ -297,9 +370,22 @@ EOF
   esac
   mkdir -p "$TASKS_DIR"
 
+  # Two agents in one worktree corrupt each other. Refuse to relaunch while the
+  # previous attempt's agent is still running — stop it first (Step 5 Case 2).
+  if [ -s "$PID_FILE" ]; then
+    local OLD_PID
+    OLD_PID=$(cat "$PID_FILE" 2>/dev/null) || OLD_PID=""
+    if task_agent_alive "$TASK_ID" "$OLD_PID"; then
+      echo "ERROR: $TASK_ID agent (pid $OLD_PID) is still running — stop it before relaunching." >&2
+      return 1
+    fi
+  fi
+
   # ── Worktree ───────────────────────────────────────────────────────────
-  local ISOLATION_FAILURE="" BRANCH="${RUNTIME}/${TASK_ID}"
+  local ISOLATION_FAILURE="" BRANCH="${RUNTIME}/${TASK_ID}" IN_GIT=0
   if git rev-parse --git-dir &>/dev/null && git rev-parse HEAD &>/dev/null; then
+    IN_GIT=1
+    ensure_delegate_ignored
     if [ -d "$WORK_DIR" ]; then
       validate_worktree "$WORK_DIR" "$BRANCH" || return 1
     elif git worktree add "$WORK_DIR" -b "$BRANCH" 2>/dev/null || \
@@ -342,6 +428,16 @@ EOF
   # Backgrounding `cd X && cmd &` would instead record a wrapper subshell.
   local CD_LINE=""
 
+  # Prompts. A fresh run executes the handoff; a --continue run resumes the
+  # runtime's previous session (all runtimes scope "previous session" to the
+  # working directory or most recent run, and we always cd into the worktree).
+  local RUN_MSG="Execute the task described in the attached handoff document. Follow all instructions in it exactly."
+  local READ_MSG="Read $TASK_FILE and execute the task described in it. Follow all instructions exactly. All changes must stay in $WORK_DIR."
+  if [ "$CONTINUE" = 1 ]; then
+    RUN_MSG="Continue the task from where you left off. The original handoff document is attached — re-read it if you need full context."
+    READ_MSG="Continue the task from where you left off. The original handoff is at $TASK_FILE — re-read it if you need full context. All changes must stay in $WORK_DIR."
+  fi
+
   case "$RUNTIME" in
 
     opencode)
@@ -352,40 +448,81 @@ EOF
         echo "$OPENCODE_HELP" | grep -q -- "--dangerously-skip-permissions" && OPENCODE_AUTO="--dangerously-skip-permissions"
         echo "$OPENCODE_HELP" | grep -q -- "--auto" && OPENCODE_AUTO="--auto"
       fi
-      local args=($SETSID nohup opencode run "Execute the task in the handoff document." --file "$TASK_FILE" --dir "$WORK_DIR")
+      local args=($SETSID nohup opencode run "$RUN_MSG" --dir "$WORK_DIR")
+      [ "$CONTINUE" = 1 ] && args+=(--continue)
+      [ -n "$MODEL" ] && args+=(-m "$MODEL")
       [ -n "$OPENCODE_AUTO" ] && args+=("$OPENCODE_AUTO")
+      # --file is an array option: keep it last so nothing after it is swallowed.
+      args+=(--file "$TASK_FILE")
       INNER_CMD=$(printf '%q ' "${args[@]}")
       ;;
 
     pi)
-      local args=($SETSID nohup pi -p "@$TASK_FILE" "Execute the task in the handoff document.")
-      [ "$ALLOW_UNSAFE" = 1 ] && args+=(--approve)
+      local args=($SETSID nohup pi -p)
+      [ "$CONTINUE" = 1 ] && args+=(--continue)
+      [ -n "$MODEL" ] && args+=(--model "$MODEL")
+      # --approve only trusts project-local pi resources for this run; pi has
+      # no per-tool approval prompts at all (see delegate-to-pi/SKILL.md).
+      # Help-detected: pi's project-trust handling has moved between releases
+      # (1.5 persists decisions in trust.json), so never pass a flag the
+      # installed version no longer accepts.
+      if [ "$ALLOW_UNSAFE" = 1 ]; then
+        local PI_HELP
+        PI_HELP=$(pi --help 2>&1) || true
+        if echo "$PI_HELP" | grep -q -- "--approve"; then
+          args+=(--approve)
+        else
+          echo "WARN: installed pi has no --approve flag; launching without it." >&2
+        fi
+      fi
+      args+=("@$TASK_FILE" "$RUN_MSG")
       INNER_CMD=$(printf '%q ' "${args[@]}")
       ;;
 
     mimo)
       local MIMO_HELP MIMO_ARGS=() MIMO_HAS_FILE=""
       MIMO_HELP=$(mimo run --help 2>&1) || true
-      echo "$MIMO_HELP" | grep -q -- "--file" && { MIMO_HAS_FILE=1; MIMO_ARGS+=(--file "$TASK_FILE"); }
       echo "$MIMO_HELP" | grep -q -- "--dir"  && MIMO_ARGS+=(--dir "$WORK_DIR")
+      [ "$CONTINUE" = 1 ] && echo "$MIMO_HELP" | grep -q -- "--continue" && MIMO_ARGS+=(--continue)
+      [ -n "$MODEL" ] && MIMO_ARGS+=(-m "$MODEL")
       [ "$ALLOW_UNSAFE" = 1 ] && echo "$MIMO_HELP" | grep -q "dangerously-skip-permissions" && MIMO_ARGS+=(--dangerously-skip-permissions)
+      # --file is an array option: keep it last.
+      echo "$MIMO_HELP" | grep -q -- "--file" && { MIMO_HAS_FILE=1; MIMO_ARGS+=(--file "$TASK_FILE"); }
       if [ -n "$MIMO_HAS_FILE" ]; then
-        local args=($SETSID nohup mimo run "Execute the handoff task." ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"})
+        local args=($SETSID nohup mimo run "$RUN_MSG" ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"})
       else
-        local args=($SETSID nohup mimo run "Read $TASK_FILE and execute the task." ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"})
+        local args=($SETSID nohup mimo run "$READ_MSG" ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"})
       fi
       INNER_CMD=$(printf '%q ' "${args[@]}")
       ;;
 
     hermes)
-      local args=($SETSID nohup hermes chat -q "Read $TASK_FILE and execute the task described in it. All changes must stay in $WORK_DIR." -Q)
+      local args=($SETSID nohup hermes chat -q "$READ_MSG" -Q)
+      [ "$CONTINUE" = 1 ] && args+=(--continue)
+      [ -n "$MODEL" ] && args+=(-m "$MODEL")
       [ "$ALLOW_UNSAFE" = 1 ] && args+=(--yolo --accept-hooks)
       INNER_CMD=$(printf '%q ' "${args[@]}")
       ;;
 
     kimi)
-      local args=($SETSID nohup kimi -p "Read $TASK_FILE and execute the task described in it. All changes must stay in $WORK_DIR.")
-      [ "$ALLOW_UNSAFE" = 1 ] && args+=(-y)
+      local args=($SETSID nohup kimi -p "$READ_MSG")
+      # kimi's continue flag is lowercase -c ("continue the previous session
+      # for the working directory"); -C does not exist.
+      [ "$CONTINUE" = 1 ] && args+=(-c)
+      [ -n "$MODEL" ] && args+=(-m "$MODEL")
+      # kimi-code 2.x: `--prompt/-p` cannot be combined with --yolo, --auto or
+      # --plan (startup is rejected), and print mode already runs in auto
+      # permission mode — no approval is ever requested; only static deny
+      # rules apply. Pre-2.0 builds still take -y as the explicit opt-in.
+      local KIMI_VERSION KIMI_MAJOR
+      KIMI_VERSION=$(kimi --version 2>/dev/null | head -1) || KIMI_VERSION=""
+      KIMI_MAJOR=$(printf '%s' "$KIMI_VERSION" | grep -oE '[0-9]+' | head -1) || KIMI_MAJOR=""
+      if [ "${KIMI_MAJOR:-0}" -ge 2 ] 2>/dev/null; then
+        echo "WARN: kimi $KIMI_VERSION print mode (-p) never asks for approval (static deny rules still apply); the worktree is the only code isolation." >&2
+        [ "$ALLOW_UNSAFE" = 1 ] && echo "WARN: kimi >= 2 rejects -y with -p; DELEGATE_ALLOW_UNSAFE_FLAGS adds nothing for kimi." >&2
+      else
+        [ "$ALLOW_UNSAFE" = 1 ] && args+=(-y)
+      fi
       INNER_CMD=$(printf '%q ' "${args[@]}")
       ;;
 
@@ -395,23 +532,43 @@ EOF
       # literal `|` — the supervisor's `$!` after backgrounding this whole
       # line is codex's own PID (last command in the pipeline), which is
       # what makes an accurate `wait` possible below.
-      local pre=(printf '%s\n\n' "Execute the task described in the handoff document below. Follow all instructions in it exactly.")
-      local pre_q catq codexq
-      pre_q=$(printf '%q ' "${pre[@]}")
-      catq=$(printf '%q ' cat "$TASK_FILE")
-      local codex_args=($SETSID nohup codex exec -C "$WORK_DIR")
-      if [ "$ALLOW_UNSAFE" = 1 ]; then
-        codex_args+=(--dangerously-bypass-approvals-and-sandbox)
+      local pre_q catq codexq codex_args INNER_CMD_STDIN
+      if [ "$CONTINUE" = 1 ]; then
+        # `codex exec resume` accepts neither -C/--cd nor -s/--sandbox: the
+        # supervisor's cd puts it in the worktree (resume --last filters by
+        # cwd), and the sandbox mode goes through a config override instead.
+        pre_q=$(printf '%q ' printf '%s\n' "$RUN_MSG")
+        INNER_CMD_STDIN="$pre_q"
+        codex_args=($SETSID nohup codex exec resume --last)
+        if [ "$ALLOW_UNSAFE" = 1 ]; then
+          codex_args+=(--dangerously-bypass-approvals-and-sandbox)
+        else
+          codex_args+=(-c 'sandbox_mode="workspace-write"')
+        fi
       else
-        codex_args+=(-s workspace-write)
+        pre_q=$(printf '%q ' printf '%s\n\n' "Execute the task described in the handoff document below. Follow all instructions in it exactly.")
+        catq=$(printf '%q ' cat "$TASK_FILE")
+        INNER_CMD_STDIN="{ $pre_q; $catq; }"
+        codex_args=($SETSID nohup codex exec -C "$WORK_DIR")
+        if [ "$ALLOW_UNSAFE" = 1 ]; then
+          codex_args+=(--dangerously-bypass-approvals-and-sandbox)
+        else
+          codex_args+=(-s workspace-write)
+        fi
       fi
+      [ -n "$MODEL" ] && codex_args+=(-m "$MODEL")
+      # Codex refuses to run outside a git repository unless told otherwise;
+      # only reachable here after an explicit DELEGATE_ALLOW_UNISOLATED=1.
+      [ "$IN_GIT" = 0 ] && codex_args+=(--skip-git-repo-check)
       codex_args+=(-)
       codexq=$(printf '%q ' "${codex_args[@]}")
-      INNER_CMD="{ $pre_q; $catq; } | $codexq"
+      INNER_CMD="$INNER_CMD_STDIN | $codexq"
       ;;
 
     agy)
-      local args=($SETSID nohup agy --print "Read $TASK_FILE and execute the task described in it. All changes in $WORK_DIR." --add-dir "$WORK_DIR")
+      local args=($SETSID nohup agy --print "$READ_MSG" --add-dir "$WORK_DIR")
+      [ "$CONTINUE" = 1 ] && args+=(--continue)
+      [ -n "$MODEL" ] && args+=(--model "$MODEL")
       [ "$ALLOW_UNSAFE" = 1 ] && args+=(--dangerously-skip-permissions)
       INNER_CMD=$(printf '%q ' "${args[@]}")
       ;;
@@ -427,6 +584,16 @@ EOF
   CD_LINE="cd $(printf '%q' "$WORK_DIR") || exit 1
 "
 
+  # ── Reset per-attempt state from any previous attempt ───────────────────
+  # A relaunch (self-healing retry) must not inherit the last attempt's exit
+  # code, timeout marker, fingerprint, process group, stall-detection markers
+  # or — critically — its PID file, which the wait loop below polls for. The
+  # previous log is kept as TASK-N.log.prev for diagnosis. The retry counter
+  # is deliberately NOT reset (see below).
+  [ -f "$LOG_FILE" ] && mv -f "$LOG_FILE" "$LOG_FILE.prev"
+  rm -f "$PID_FILE" "$EXITCODE_FILE" "$FP_FILE" "$PGID_FILE" "$TIMEDOUT_FILE" "$TASKS_DIR/$TASK_ID.stopped" \
+        "$TASKS_DIR/$TASK_ID.log.size" "$TASKS_DIR/$TASK_ID.lastpoll"
+
   # ── Write the supervisor script ──────────────────────────────────────────
   # The supervisor launches the real agent as ITS OWN child (so `wait` yields
   # a genuine exit code, not a guess), races a timeout timer against natural
@@ -440,6 +607,7 @@ PID_FILE=$(printf '%q' "$PID_FILE")
 EXITCODE_FILE=$(printf '%q' "$EXITCODE_FILE")
 FP_FILE=$(printf '%q' "$FP_FILE")
 PGID_FILE=$(printf '%q' "$PGID_FILE")
+TIMEDOUT_FILE=$(printf '%q' "$TIMEDOUT_FILE")
 
 $CD_LINE$INNER_CMD &
 RUNTIME_PID=\$!
@@ -454,10 +622,25 @@ PGID=\$(ps -o pgid= -p "\$RUNTIME_PID" 2>/dev/null | tr -d ' ') || PGID=""
 [ -z "\$PGID" ] && PGID=\$(_ps_fixed_field "-l -p \$RUNTIME_PID" PGID)
 [ -n "\$PGID" ] && [ "\$PGID" = "\$RUNTIME_PID" ] && echo "\$PGID" > "\$PGID_FILE"
 
-( sleep "\$TIMEOUT_SECS"
-  kill -TERM "\$RUNTIME_PID" 2>/dev/null
-  sleep 30
-  kill -KILL "\$RUNTIME_PID" 2>/dev/null ) &
+# Timer. Its sleeps run as waited-on children so cancelling the timer also
+# reaps the sleep instead of orphaning it. On expiry it records the timeout
+# and signals the agent's whole process group when launch verified the agent
+# leads its own group (setsid), otherwise the agent itself.
+signal_agent() {
+  if [ -s "\$PGID_FILE" ] && [ "\$(cat "\$PGID_FILE" 2>/dev/null)" = "\$RUNTIME_PID" ]; then
+    kill "-\$1" "-\$RUNTIME_PID" 2>/dev/null
+  fi
+  kill "-\$1" "\$RUNTIME_PID" 2>/dev/null
+}
+(
+  SLEEP_PID=""
+  trap '[ -n "\$SLEEP_PID" ] && kill "\$SLEEP_PID" 2>/dev/null; exit 0' TERM
+  sleep "\$TIMEOUT_SECS" & SLEEP_PID=\$!; wait "\$SLEEP_PID"
+  echo "\$TIMEOUT_SECS" > "\$TIMEDOUT_FILE"
+  signal_agent TERM
+  sleep 30 & SLEEP_PID=\$!; wait "\$SLEEP_PID"
+  signal_agent KILL
+) &
 TIMER_PID=\$!
 
 EXIT_CODE=0
@@ -482,10 +665,10 @@ SUP
   local SUPERVISOR_PID=$!
   echo "$SUPERVISOR_PID" > "$WATCHDOG_FILE"
 
-  # Initialise retry counter for parity with the SKILL.md inline launch
-  # blocks; self-healing Case 1 reads this file (falls back to 0 if absent,
-  # but write it so the contract is consistent across both launch paths).
-  echo 0 > "$TASKS_DIR/$TASK_ID.retries"
+  # Initialise the retry counter on the FIRST launch only. Self-healing
+  # increments it before relaunching; resetting it here would let a task
+  # retry forever (the caller's "RETRIES >= 2 → failed" check never trips).
+  [ -f "$TASKS_DIR/$TASK_ID.retries" ] || echo 0 > "$TASKS_DIR/$TASK_ID.retries"
 
   # Wait for the supervisor to record the real agent PID before reporting —
   # callers read PID_FILE immediately after this script returns.
@@ -533,7 +716,7 @@ cmd_status() {
   [ -f "$SIZE_FILE" ] && { PREV_SIZE=$(cat "$SIZE_FILE" 2>/dev/null) || PREV_SIZE=-1; }
   echo "$LOG_SIZE" > "$SIZE_FILE"
 
-  if [ -n "$PID" ] && pid_alive "$PID"; then
+  if task_agent_alive "$TASK_ID" "$PID"; then
     # Second liveness signal alongside log growth: any file in the worktree
     # touched more recently than our own last poll marker means the agent is
     # doing something even if it hasn't written to the log this cycle (e.g.
@@ -564,11 +747,23 @@ cmd_status() {
   fi
 
   # Process is gone — classify using the real exit code when we have one.
+  # A timeout outranks the exit code (the agent was killed, so its code is
+  # just the signal); a nonzero exit with almost no output is a startup
+  # failure (bad flag, auth, missing model) — workflow Step 5, Case 1.
   if [ -f "$EXITCODE_FILE" ]; then
     local CODE
     CODE=$(cat "$EXITCODE_FILE" 2>/dev/null) || CODE=""
-    if [ "$CODE" = "0" ]; then
+    if [ -f "$TASKS_DIR/$TASK_ID.timedout" ]; then
+      echo "STATE=TIMED_OUT"
+      echo "EXITCODE=$CODE"
+    elif [ -f "$TASKS_DIR/$TASK_ID.stopped" ]; then
+      echo "STATE=STOPPED"
+      echo "EXITCODE=$CODE"
+    elif [ "$CODE" = "0" ]; then
       echo "STATE=EXITED_OK"
+    elif [ "$LOG_SIZE" -lt 500 ]; then
+      echo "STATE=LAUNCH_FAILED"
+      echo "EXITCODE=$CODE"
     else
       echo "STATE=EXITED_FAILED"
       echo "EXITCODE=$CODE"
@@ -599,12 +794,12 @@ cmd_verify() {
     return 1
   fi
 
-  # Extract the fenced ```bash block under "## Verification Expectations".
+  # Extract the fenced ```bash (or ```sh) block(s) under "## Verification Expectations".
   local BLOCK
   BLOCK=$(awk '
     /^## Verification Expectations/ { infield=1; next }
-    infield && /^## / { infield=0 }
-    infield && /^```bash/ { incode=1; next }
+    infield && !incode && /^## / { infield=0 }
+    infield && !incode && /^```(bash|sh|shell)[[:space:]]*$/ { incode=1; next }
     infield && incode && /^```/ { incode=0; next }
     infield && incode { print }
   ' "$TASK_FILE")
@@ -617,7 +812,11 @@ cmd_verify() {
 
   local VERIFY_LOG="$TASKS_DIR/$TASK_ID.verify.log"
   local CODE=0
-  ( cd "$WORK_DIR" && bash -c "$BLOCK" ) > "$VERIFY_LOG" 2>&1 || CODE=$?
+  # errexit + pipefail: every command in the block is a check. Without them a
+  # multi-line block's status is only its LAST command's, so `npm test` could
+  # fail and a trailing `test -f x` would still report PASS. stdin is closed so
+  # an interactive command fails fast instead of hanging the review loop.
+  ( cd "$WORK_DIR" && bash -eo pipefail -c "$BLOCK" ) < /dev/null > "$VERIFY_LOG" 2>&1 || CODE=$?
 
   if [ "$CODE" -eq 0 ]; then
     echo "STATE=PASS"
@@ -658,7 +857,7 @@ cmd_reconcile() {
     fi
     local PID
     PID=$(cat "$PID_FILE" 2>/dev/null) || PID=""
-    if [ -z "$PID" ] || ! pid_alive "$PID"; then
+    if ! task_agent_alive "$TASK_ID" "$PID"; then
       echo "STALE $TASK_ID pid=$PID reason=process_not_running (likely an orphaned entry from a crashed or closed session — safe to mark 'stale' in TODO.md and resume with --continue)"
       FOUND=1
     fi
@@ -709,10 +908,57 @@ cmd_next_id() {
   # the pipeline's exit status and, if naively caught with `|| LAST_N=""`,
   # silently discard a real match. Neutralise grep's own exit status inside
   # the pipe instead, so only sed/sort/tail determine the outcome.
-  local LAST_N
-  LAST_N=$( { grep -h '^## \[TASK-' "$PROJECT_ROOT/TODO.md" "$PROJECT_ROOT/TODO-ARCHIVE.md" 2>/dev/null || true; } \
-    | sed -E 's/^## \[TASK-([0-9]+)\].*/\1/' | sort -n | tail -1)
-  echo "TASK-$(( ${LAST_N:-0} + 1 ))"
+  #
+  # The ledger alone is not enough: the caller appends its TODO.md block only
+  # AFTER this returns, so a second caller taking the lock in that window would
+  # read the same max and get the same id. Every id handed out is therefore
+  # also reserved as .delegate/tasks/TASK-N.reserved (inside the lock), and
+  # existing reservations / handoffs / worktrees count toward the max.
+  local LAST_N TASKS_DIR="$PROJECT_ROOT/.delegate/tasks"
+  mkdir -p "$TASKS_DIR"
+  LAST_N=$( {
+      { grep -h '^## \[TASK-' "$PROJECT_ROOT/TODO.md" "$PROJECT_ROOT/TODO-ARCHIVE.md" 2>/dev/null || true; } \
+        | sed -E 's/^## \[TASK-([0-9]+)\].*/\1/'
+      for f in "$TASKS_DIR"/TASK-*.reserved "$TASKS_DIR"/TASK-*.md "$PROJECT_ROOT/.delegate/worktrees"/TASK-*; do
+        [ -e "$f" ] || continue
+        f="${f##*/TASK-}"; printf '%s\n' "${f%%[!0-9]*}"
+      done
+    } | grep -E '^[0-9]+$' | sort -n | tail -1 || true)
+  local NEXT="TASK-$(( 10#${LAST_N:-0} + 1 ))"
+  : > "$TASKS_DIR/$NEXT.reserved"
+  ensure_delegate_ignored
+  echo "$NEXT"
+}
+
+# ── Stop ─────────────────────────────────────────────────────────────────────
+
+cmd_stop() {
+  local TASK_ID="${1:?Usage: delegate.sh stop <task-id>}"
+  validate_task_id "$TASK_ID"
+  validate_delegate_paths "$TASK_ID"
+  local PID_FILE="$PROJECT_ROOT/.delegate/tasks/$TASK_ID.pid" PID
+  PID=$(cat "$PID_FILE" 2>/dev/null) || PID=""
+  if ! task_agent_alive "$TASK_ID" "$PID"; then
+    echo "STATE=NOT_RUNNING"
+    return 0
+  fi
+  # Marker first, so status reports STOPPED (deliberate) rather than a crash.
+  : > "$PROJECT_ROOT/.delegate/tasks/$TASK_ID.stopped"
+  # TERM the process tree, give it up to 10s to exit cleanly, then KILL.
+  # kill_tree refuses to signal a PID whose fingerprint no longer matches.
+  kill_tree "$TASK_ID" TERM
+  local waited=0
+  while pid_alive "$PID" && [ "$waited" -lt 100 ]; do
+    sleep 0.1; waited=$((waited + 1))
+  done
+  pid_alive "$PID" && kill_tree "$TASK_ID" KILL
+  # The supervisor records the exit code once its child is reaped.
+  waited=0
+  while [ ! -f "$PROJECT_ROOT/.delegate/tasks/$TASK_ID.exitcode" ] && [ "$waited" -lt 50 ]; do
+    sleep 0.1; waited=$((waited + 1))
+  done
+  echo "STATE=STOPPED"
+  echo "PID=$PID"
 }
 
 # ── Dispatch ─────────────────────────────────────────────────────────────────
@@ -723,6 +969,7 @@ case "$SUBCOMMAND" in
   verify)    shift; cmd_verify "$@" ;;
   reconcile) shift; cmd_reconcile "$@" ;;
   next-id)   shift; cmd_next_id "$@" ;;
+  stop)      shift; cmd_stop "$@" ;;
   ""|-h|--help) usage; exit 1 ;;
   *) cmd_launch "$@" ;;
 esac

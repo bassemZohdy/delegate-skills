@@ -1,7 +1,7 @@
 ---
 name: delegate-tasks
 description: "Delegate long-running coding tasks to a background agent CLI (opencode, pi, mimo, hermes, kimi, codex, agy) with git worktree isolation, structured handoff documents, and progress monitoring."
-version: 1.3.0
+version: 1.4.0
 author: delegate-skills
 license: MIT
 platforms: [linux, macos, windows]
@@ -60,11 +60,24 @@ terminal(command="<project test command, e.g. npm test or pytest>", workdir="<pr
 
 ### Step 1 — Determine Next Task Number
 
+Locate the launcher (`delegate.sh`) once, in this order: `scripts/delegate.sh`
+in the project; the copy bundled with any installed delegate skill (for example
+`~/.agents/skills/delegate-to-any/scripts/delegate.sh` or
+`~/.claude/skills/delegate-to-any/scripts/delegate.sh`); or
+`helpers/scripts/delegate.sh` in a checkout of this repository. Below,
+`$DELEGATE_SH` means that path. Always run it from the project root.
+
+```
+terminal(command="bash $DELEGATE_SH next-id", workdir="<project>")
+```
+
+It prints `TASK-<N>` and reserves that id under a lock, so a parallel delegation can never receive the same number. Without the launcher, take the max across both ledgers and add 1 (empty output → 1):
+
 ```
 terminal(command="grep -h '^## \\[TASK-' TODO.md TODO-ARCHIVE.md 2>/dev/null | sed -E 's/^## \\[TASK-([0-9]+)\\].*/\\1/' | sort -n | tail -1", workdir="<project>")
 ```
 
-Add 1 to the result (empty output → start at 1). Use `TASK-<N>` (e.g. `TASK-1`) throughout. Taking the MAX across both files matters: archived tasks live in `TODO-ARCHIVE.md`, and a count-based ID would collide with surviving tasks if any block was ever removed.
+Use `TASK-<N>` (e.g. `TASK-1`) throughout. Taking the MAX across both files matters: archived tasks live in `TODO-ARCHIVE.md`, and a count-based ID would collide with surviving tasks if any block was ever removed.
 
 ---
 
@@ -107,13 +120,12 @@ terminal(command="cat > .delegate/tasks/TASK-<N>.md << 'HANDOFF'\n# Task Handoff
 Use the shared launcher script. It handles worktree reuse, the right launch command for the runtime, and the timeout watchdog:
 
 ```
-terminal(command="bash scripts/delegate.sh <runtime> TASK-<N> <timeout-secs>", workdir="<project>")
+terminal(command="bash $DELEGATE_SH <runtime> TASK-<N> <timeout-secs>", workdir="<project>")
 ```
 
-Capture the output: `PID=`, `LOG=`, `WORK_DIR=`.
+Capture the output: `PID=`, `LOG=`, `WORK_DIR=`. Append `--model <id>` only if the user asked for a specific model.
 
-If the helper is absent, install `helpers/scripts/delegate.sh` as
-`scripts/delegate.sh` first, or use the safe manual launch instructions in the
+If no launcher is available, use the safe manual launch instructions in the
 installed runtime skill. Do not use legacy direct launch templates that enable
 auto-approval or bypass sandboxing. Supported runtimes are opencode, pi, mimo,
 hermes, kimi, codex and agy.
@@ -132,9 +144,9 @@ Tell the user: task ID, runtime, log path, worktree path, timeout deadline.
 
 Poll every ~20% of the timeout interval:
 
-**Check liveness:**
+**Check status** (prints `STATE=RUNNING|STALLED|EXITED_OK|EXITED_FAILED|LAUNCH_FAILED|TIMED_OUT|STOPPED`, the real `EXITCODE=`, `LOG_SIZE=` and `RETRIES=`):
 ```
-terminal(command="kill -0 <PID> 2>/dev/null && echo running || echo done", workdir="<project>")
+terminal(command="bash $DELEGATE_SH status TASK-<N>", workdir="<project>")
 ```
 
 **Check log for progress:**
@@ -142,19 +154,22 @@ terminal(command="kill -0 <PID> 2>/dev/null && echo running || echo done", workd
 terminal(command="tail -30 .delegate/tasks/TASK-<N>.log", workdir="<project>")
 ```
 
-**Stall detection** — compare log size between polls:
+**Stall** (`STATE=STALLED`: no log growth and no worktree writes since the last poll) — stop it, bump the retry counter, and resume the same runtime's session:
 ```
-terminal(command="wc -c < .delegate/tasks/TASK-<N>.log", workdir="<project>")
+terminal(command="bash $DELEGATE_SH stop TASK-<N>", workdir="<project>")
+terminal(command="echo $(( $(cat .delegate/tasks/TASK-<N>.retries) + 1 )) > .delegate/tasks/TASK-<N>.retries", workdir="<project>")
+terminal(command="bash $DELEGATE_SH <runtime> TASK-<N> <timeout-secs> --continue", workdir="<project>")
+```
+After 2 retries, mark the task `failed` instead. A stall is often a permission prompt nobody can answer — report that; never add bypass flags to get past it.
+
+**Verify** — when the handoff's `## Verification Expectations` has a fenced bash block:
+```
+terminal(command="bash $DELEGATE_SH verify TASK-<N>", workdir="<project>")
 ```
 
-If the log stops growing, the agent stalled. Kill and retry with `--continue` (reuse `$PROJECT_ROOT` and `$OPENCODE_AUTO` from the initial launch):
+**On completion** — edit only this task's block in `TODO.md` (set `status: completed`, add `reviewed:` and `outcome:`, check off its sub-tasks, clear `owner`). Never use a file-wide substitution such as `sed 's/status: in_progress/.../'` — it would also flip every other in-progress task. Then commit and report to the user:
 ```
-terminal(command="kill <PID> && nohup opencode run 'Continue from where you left off.' --file \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.md\" --dir \"$PROJECT_ROOT/.delegate/worktrees/TASK-<N>\" --continue $OPENCODE_AUTO > \"$PROJECT_ROOT/.delegate/tasks/TASK-<N>.log\" 2>&1 & echo $!", workdir="<project>")
-```
-
-**On completion** — update TODO.md, commit it, and report to user:
-```
-terminal(command="sed -i 's/status: in_progress/status: completed/' TODO.md && git add TODO.md && git commit -m 'TASK-<N>: mark completed'", workdir="<project>")
+terminal(command="git add TODO.md && git commit -m 'TASK-<N>: mark completed'", workdir="<project>")
 ```
 Committing keeps the main tree clean before the next delegation. Merging the worktree's actual code changes into the current branch is a separate, deliberate step — report the merge command to the user rather than running it automatically, since it changes their current branch:
 ```

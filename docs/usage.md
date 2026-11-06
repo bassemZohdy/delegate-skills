@@ -40,10 +40,11 @@ Override the default model by including `--model` in your request for tools that
 ```
 /delegate-to-opencode --model anthropic/claude-sonnet-4-6 <task>
 /delegate-to-pi --model claude-sonnet-4-6 <task>
-/delegate-to-codex --model o3 <task>
+/delegate-to-codex --model <codex-model-name> <task>
+/delegate-to-agy --model <id-from-agy-models> <task>
 ```
 
-The skill verifies the model ID before launching where possible. Agy does not support a `--model` CLI flag — configure its model in Agy's settings file.
+The skill verifies the model ID before launching where the runtime can list models (`opencode models`, `pi --list-models`, `mimo models`, `agy models`) and passes it to the launcher as `--model <id>`. Hermes, kimi and codex have no list command; a wrong name fails at startup and is reported as `STATE=LAUNCH_FAILED`.
 
 ### Timeout tiers
 
@@ -67,14 +68,17 @@ your-project/
     ├── todo.lock/                       # transient — held only during `next-id`
     ├── tasks/
     │   ├── TASK-N.md                   # handoff document
+    │   ├── TASK-N.reserved             # id reservation written by `next-id`
     │   ├── TASK-N.log                  # agent output
+    │   ├── TASK-N.log.prev             # previous attempt's output (after a relaunch)
     │   ├── TASK-N.log.size             # log size for stall detection (status)
     │   ├── TASK-N.lastpoll             # mtime marker for the filesystem-activity
     │   │                                # stall signal (status)
     │   ├── TASK-N.pid                  # real agent process ID
-    │   ├── TASK-N.watchdog.pid         # supervisor process ID (launched via
-    │   │                                # scripts/delegate.sh only — see below)
+    │   ├── TASK-N.watchdog.pid         # supervisor process ID (launcher only)
     │   ├── TASK-N.exitcode             # agent's real exit code, once it exits
+    │   ├── TASK-N.timedout             # present if the timeout fired
+    │   ├── TASK-N.stopped              # present if `delegate.sh stop` ended it
     │   ├── TASK-N.fingerprint          # best-effort process identity, guards
     │   │                                # against a later kill hitting a reused PID
     │   ├── TASK-N.pgid                 # process-group id, only written when
@@ -87,19 +91,23 @@ your-project/
         └── TASK-N/                     # isolated git checkout
 ```
 
-## `scripts/delegate.sh` subcommands
+`.delegate/` is added to the repository's untracked `.git/info/exclude` on first use, so it never shows up in `git status` (and never makes the next delegation's clean-tree check fail).
 
-If you copied `helpers/scripts/delegate.sh` into your project (see `docs/install.md`), it does more than launch — it's the preferred way to monitor and manage tasks too, since it captures information a model re-deriving the workflow from prose cannot (a real exit code, a verified process identity):
+## `delegate.sh` subcommands
+
+The launcher ships inside every skill folder as `scripts/delegate.sh` (a project-local `scripts/delegate.sh` takes precedence if you add one). It does more than launch — it's the preferred way to monitor and manage tasks too, since it captures information a model re-deriving the workflow from prose cannot (a real exit code, a verified process identity). Run it from the project root:
 
 ```bash
-bash scripts/delegate.sh <runtime> TASK-N [timeout-secs]   # launch (unchanged)
-bash scripts/delegate.sh status TASK-N                     # machine-readable status
-bash scripts/delegate.sh verify TASK-N                     # run the handoff's ```bash verification block
-bash scripts/delegate.sh reconcile                         # find in_progress tasks orphaned by a crashed session
-bash scripts/delegate.sh next-id                           # allocate the next TASK-N (lock-protected)
+bash "$DELEGATE_SH" <runtime> TASK-N [timeout-secs] [--model ID]   # launch
+bash "$DELEGATE_SH" <runtime> TASK-N [timeout-secs] --continue     # resume the previous session (retry)
+bash "$DELEGATE_SH" status TASK-N                                  # machine-readable status
+bash "$DELEGATE_SH" stop TASK-N                                    # terminate the agent's process tree safely
+bash "$DELEGATE_SH" verify TASK-N                                  # run the handoff's ```bash verification block
+bash "$DELEGATE_SH" reconcile                                      # find in_progress tasks orphaned by a crashed session
+bash "$DELEGATE_SH" next-id                                        # allocate + reserve the next TASK-N (lock-protected)
 ```
 
-`status` prints `STATE=RUNNING`, `STATE=STALLED`, `STATE=EXITED_OK`, `STATE=EXITED_FAILED` (with `EXITCODE=`), `STATE=LAUNCH_FAILED`, or `STATE=NOT_FOUND`. Launched tasks run inside a small supervisor process that is the agent's real parent — it captures the agent's true exit code via `wait` (not a guess from "the process disappeared"), races the timeout against natural completion and auto-cancels the timer the instant the agent exits, and is itself launched with `nohup` so it survives the calling terminal closing.
+`status` prints `STATE=RUNNING`, `STALLED`, `EXITED_OK`, `EXITED_FAILED`, `LAUNCH_FAILED` (nonzero exit with < 500 bytes of output), `TIMED_OUT`, `STOPPED`, `EXITED_UNKNOWN` or `NOT_FOUND`, with `EXITCODE=` once the agent has exited. A relaunch refuses to start while the previous attempt is still running, keeps the retry counter, and rotates the old log to `TASK-N.log.prev`. `verify` runs the block under `set -e -o pipefail`, so any failing line fails verification. Launched tasks run inside a small supervisor process that is the agent's real parent — it captures the agent's true exit code via `wait` (not a guess from "the process disappeared"), races the timeout against natural completion and auto-cancels the timer the instant the agent exits, and is itself launched with `nohup` so it survives the calling terminal closing.
 
 `reconcile` exists because a delegated task's `TODO.md` entry stays `status: in_progress` forever if the AI session that launched it crashes or closes before reviewing completion — nothing else would ever come back to mark it done or failed. Run it at the start of a session before delegating more work.
 
@@ -115,24 +123,25 @@ git branch -d <runtime>/TASK-N
 
 ## Self-healing
 
-The skill monitors the agent and recovers automatically (via `scripts/delegate.sh status`/`verify` when present, otherwise the same decision tree run manually):
+The skill monitors the agent and recovers automatically (via the launcher's `status`/`stop`/`verify`, otherwise the same decision tree run manually):
 
 | Symptom | What happens |
 |---------|--------------|
 | Process exits immediately, log < 500 bytes | Reads error, adjusts command, retries (max 2×) |
-| Process running, log flat AND no newer files in the worktree since the last poll | Kills it, retries with `--continue` |
+| Process running, log flat AND no newer files in the worktree since the last poll | `stop`s it, retries with `--continue` (often a permission prompt nobody can answer — reported, never bypassed automatically) |
 | Process exits cleanly but output file missing | Retries with `--continue` |
 | Verification fails after output is produced | Retries with `--continue` and notes what failed |
 | All retries exhausted | Marks `failed`, reports log tail to you |
-| A prior session crashed mid-task, leaving `status: in_progress` forever | `scripts/delegate.sh reconcile` finds it; mark `stale` and resume with `--continue` |
+| Timeout fires | Supervisor TERMs then KILLs the agent; `status` reports `TIMED_OUT`; partial work stays in the worktree |
+| A prior session crashed mid-task, leaving `status: in_progress` forever | `delegate.sh reconcile` finds it; mark `stale` and resume with `--continue` |
 
 Retry count is tracked in `TODO.md` (`retries:` field) and in `.delegate/tasks/TASK-N.retries`.
 
-Killing a stalled or timed-out process (`scripts/delegate.sh` launches only) is itself resilient: it never signals a PID that no longer matches the process fingerprint recorded at launch (guards against an unrelated process reusing that PID), and it terminates the agent's child processes too, not just the single top-level PID.
+Killing a stalled or timed-out process (launcher only) is itself resilient: it never signals a PID that no longer matches the process fingerprint recorded at launch (guards against an unrelated process reusing that PID), and it terminates the agent's child processes too, not just the single top-level PID.
 
 ## Launch safety and compatibility
 
-`helpers/scripts/delegate.sh` omits automatic permission-bypass flags and refuses
+The launcher omits automatic permission-bypass flags and refuses
 to launch if a verified git worktree cannot be created or reused. Codex uses the
 `workspace-write` sandbox. A runtime may still refuse an operation or wait for
 an approval in background mode; inspect its log rather than enabling bypasses
@@ -144,14 +153,15 @@ Two independent, per-launch opt-ins are available:
 
 ```bash
 # Accept edits in the original project if no worktree can be created.
-DELEGATE_ALLOW_UNISOLATED=1 bash helpers/scripts/delegate.sh pi TASK-1 1800
+DELEGATE_ALLOW_UNISOLATED=1 bash "$DELEGATE_SH" pi TASK-1 1800
 
 # Explicitly accept runtime permission bypass in a controlled environment.
-DELEGATE_ALLOW_UNSAFE_FLAGS=1 bash helpers/scripts/delegate.sh pi TASK-1 1800
+DELEGATE_ALLOW_UNSAFE_FLAGS=1 bash "$DELEGATE_SH" pi TASK-1 1800
 ```
 
 Both variables accept only `0` (default) or `1`. The second enables supported
-OpenCode `--auto`/legacy skip-permissions, Pi `--approve`, MiMo skip-permissions,
+OpenCode `--auto`/legacy skip-permissions, Pi `--approve` (trusts project-local pi
+files — pi itself never prompts before running tools), MiMo skip-permissions,
 Hermes YOLO/hook acceptance, Kimi YOLO, Codex approval/sandbox bypass or Agy
 skip-permissions. Opt-in is never inferred from worktree availability or retry.
 Git worktrees separate code edits; **they are not an OS security boundary**.
@@ -165,8 +175,8 @@ an existing worktree must match this repository and `<runtime>/TASK-N` branch.
 These checks guard accidental traversal/reuse; they do not defend against a
 concurrent hostile process modifying paths after validation.
 
-Maintain `skills/` as the source and run `bash helpers/scripts/sync-skills.sh`
-after edits. `--check` verifies distributed workflow copies and `.agents/skills/`
-without writing files. Copies remain self-contained for single-skill installs.
+Maintain `skills/` and `helpers/scripts/delegate.sh` as the sources and run
+`bash helpers/scripts/sync-skills.sh` after edits. `--check` verifies distributed
+workflow and launcher copies and `.agents/skills/` without writing files. Copies remain self-contained for single-skill installs.
 No root license file is added in this change: the existing MIT declarations
 remain subject to the owner's licensing/provenance review.

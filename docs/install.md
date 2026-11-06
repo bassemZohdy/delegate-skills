@@ -32,17 +32,20 @@ This repository contains **skill files** conforming to the [agentskills.io open 
 ### Self-contained layout
 
 Each skill folder is fully self-contained — `SKILL.md` references its own local
-`workflow.md` copy, never a sibling directory. Install one skill folder or all of
-them; nothing else needs to come along:
+`workflow.md` and `scripts/delegate.sh` copies, never a sibling directory. Install
+one skill folder or all of them; nothing else needs to come along. Copy the whole
+folder (including `scripts/`), not just `SKILL.md`:
 
 ```
 <skills-root>/                  ← ~/.agents/skills/ or ~/.claude/skills/
 ├── delegate-to-any/
 │   ├── SKILL.md
-│   └── workflow.md
+│   ├── workflow.md
+│   └── scripts/delegate.sh
 ├── delegate-to-opencode/
 │   ├── SKILL.md
-│   └── workflow.md
+│   ├── workflow.md
+│   └── scripts/delegate.sh
 └── ...
 ```
 
@@ -239,9 +242,13 @@ See `helpers/adapters/generic-prompt.md` for Continue.dev slash command config a
 
 ---
 
-## Installing the launcher script
+## The launcher script
 
-`helpers/scripts/delegate.sh` is a standalone bash script. Copy it into any project:
+Nothing to install for skill users: every skill folder already contains the
+launcher at `scripts/delegate.sh`, and the workflow uses it automatically.
+
+Optionally pin a specific version per project — a project-local
+`scripts/delegate.sh` takes precedence over the bundled copy:
 
 ```bash
 mkdir -p scripts
@@ -292,5 +299,5 @@ Requires a git repo with at least one commit: `git init && git commit --allow-em
 **Hermes skill not appearing**
 Run `hermes skills list`. First confirm which `config.yaml` Hermes actually reads — `echo $HERMES_HOME` (defaults to `~/.hermes` on macOS/Linux, `%LOCALAPPDATA%\hermes` on Windows). Editing the wrong one is silent: no error, the skill just never shows up. Check `external_dirs` in `$HERMES_HOME/config.yaml` points to the correct path and that Hermes was restarted after the config change.
 
-**`helpers/scripts/delegate.sh` exits with "Runtime not found"**
+**`delegate.sh` exits with "Runtime not found"**
 The chosen agent CLI is not on PATH. Verify with `command -v <runtime>`.

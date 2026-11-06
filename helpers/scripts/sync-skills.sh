@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # skills/ is authoritative; copies stay self-contained for single-skill installs.
+#   skills/shared/workflow.md      → skills/delegate-to-*/workflow.md
+#   helpers/scripts/delegate.sh    → skills/delegate-to-*/scripts/delegate.sh
+#   skills/                        → .agents/skills/ (agentskills.io project mirror)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
 MODE="${1:-}"
@@ -7,6 +10,7 @@ case "$MODE" in ""|--check) ;; *) echo "Usage: sync-skills.sh [--check]" >&2; ex
 if [ "$MODE" = --check ]; then
   for skill in "$ROOT"/skills/delegate-to-*; do
     cmp "$ROOT/skills/shared/workflow.md" "$skill/workflow.md"
+    cmp "$ROOT/helpers/scripts/delegate.sh" "$skill/scripts/delegate.sh"
   done
   diff -r "$ROOT/skills" "$ROOT/.agents/skills"
   echo "Skill distributions match canonical sources."
@@ -20,6 +24,9 @@ else
   fi
   for skill in "$ROOT"/skills/delegate-to-*; do
     cp "$ROOT/skills/shared/workflow.md" "$skill/workflow.md"
+    mkdir -p "$skill/scripts"
+    cp "$ROOT/helpers/scripts/delegate.sh" "$skill/scripts/delegate.sh"
+    chmod +x "$skill/scripts/delegate.sh" 2>/dev/null || true
   done
   mkdir -p "$ROOT/.agents/skills"
   cp -R "$ROOT/skills/." "$ROOT/.agents/skills/"

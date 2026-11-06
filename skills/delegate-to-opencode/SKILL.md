@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and opencode or oh-my-opencode on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.3.1
+  version: 1.4.0
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -50,10 +50,12 @@ If no model was requested, omit `-m` entirely — opencode uses its configured d
 
 **Flags** — check what the runtime actually supports:
 ```bash
-opencode run --help 2>&1 | grep -E "variant|effort"
-# 'variant' present → may pass --variant <level> if appropriate
+opencode run --help 2>&1 | grep -E "variant|effort|thinking"
+# '--variant <level>' present → provider-specific reasoning effort (e.g. high, max, minimal)
+# '--thinking' is a boolean that only SHOWS thinking blocks — it is not an effort level
 # 'effort' not present → never use it
 ```
+`--file` is an array option (`[array]` in the help): it consumes following non-flag words, so never put the message or another positional after it.
 
 **Auto-approval flag** — disabled by default; explicit opt-in only. The flag name has changed across opencode versions (`--dangerously-skip-permissions` was replaced by `--auto` as of v1.17.x) — never hardcode one, detect it. Check the deprecated flag first so `--auto` wins when a version supports both:
 ```bash
@@ -83,6 +85,16 @@ Never silently fall back to the project root. If isolation fails, stop unless
 the operator explicitly set `DELEGATE_ALLOW_UNISOLATED=1` for this launch.
 
 ### Launch
+
+**Preferred — the bundled launcher** (`$DELEGATE_SH`, resolved at the top of [`workflow.md`](workflow.md)):
+
+```bash
+bash "$DELEGATE_SH" opencode TASK-N "$TIMEOUT_SECS"     # append --model "<id>" only if the user asked for a model
+```
+
+It verifies (or creates) the worktree, applies exactly the flags described in this file (for `oh-my-opencode`, see the `omo` note below), records the real PID, exit code and a PID-reuse fingerprint, and arms a watchdog that cancels itself when the agent exits. Relay its `PID=`, `LOG=` and `WORK_DIR=` lines to the user. Use the manual block below only when no launcher is available.
+
+**Manual fallback:**
 
 **Critical: never expand the handoff document into a shell variable.** Multi-line markdown with special characters (`#`, backticks, quotes, brackets) breaks positional argument parsing cross-platform. Instead, attach the handoff file with `--file` and pass a short prompt as the message.
 
@@ -120,7 +132,7 @@ nohup bash -c 'sleep "$1"; kill -TERM "$2" 2>/dev/null; sleep 30; kill -KILL "$2
 echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```
 
-**`omo` — oh-my-opencode:**
+**`omo` — oh-my-opencode:** the launcher targets the `opencode` binary only. oh-my-opencode is installed as an opencode plugin, so `bash "$DELEGATE_SH" opencode ...` normally runs with it loaded; use the manual block below only when you specifically need the `oh-my-opencode run` entry point.
 ```bash
 # Capture PROJECT_ROOT first — both branches below either point omo's --dir at the
 # worktree or cd into it, so any relative path (e.g. --file) must be made absolute
@@ -187,15 +199,31 @@ echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 
 Tell the user: task ID, which binary launched, working directory, timeout deadline.
 
-### Retry (Step 5 Case 2)
+### Retry (Step 5 Cases 2–4)
 
-When self-healing retries with `--continue` (reuse `$PROJECT_ROOT`, `$WORK_DIR`, and `$OPENCODE_AUTO_FLAG` from the initial launch):
+With the launcher (it never resets the retry counter and rotates the old log to `TASK-N.log.prev`):
 ```bash
+bash "$DELEGATE_SH" stop TASK-N                              # no-op if it already exited
+bash "$DELEGATE_SH" opencode TASK-N "$TIMEOUT_SECS" --continue   # resumes the previous session in the worktree
+```
+
+Manual fallback (reuse the variables from the initial launch):
+```bash
+# The previous attempt must already be stopped (Step 5 Case 2). Cancel its
+# watchdog, keep its log for diagnosis, then relaunch and re-arm.
+kill "$(cat "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid" 2>/dev/null)" 2>/dev/null
+mv -f "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" "$PROJECT_ROOT/.delegate/tasks/TASK-N.log.prev" 2>/dev/null
 nohup opencode run \
-  "Continue the task from where you left off." \
-  --file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md" \
+  "Continue the task from where you left off. The original handoff document is attached." \
   --dir "$WORK_DIR" \
   --continue \
   $OPENCODE_AUTO_FLAG \
+  --file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md" \
   > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
+TASK_PID=$!
+echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
+nohup bash -c 'sleep "$1"; kill -TERM "$2" 2>/dev/null; sleep 30; kill -KILL "$2" 2>/dev/null' \
+  _ "$TIMEOUT_SECS" "$TASK_PID" > /dev/null 2>&1 &
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
+# omo: the same, with `oh-my-opencode run`, "${OMO_ARGS[@]}" and --continue (cd into $WORK_DIR first if it has no --dir).
 ```

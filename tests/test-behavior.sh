@@ -183,7 +183,7 @@ test_missing_handoff() {
 
   # Assert
   [ "$exit_code" = "1" ] || return 1
-  grep -q "skills/shared/workflow.md" "$tempfile" || return 1
+  grep -q "workflow.md" "$tempfile" || return 1
 }
 
 # ─── Test 2: Missing runtime → exit 1 with guidance ───────────────────────
@@ -857,10 +857,183 @@ test_status_failed_exitcode() {
   code=$(cat "$SANDBOX/.delegate/tasks/TASK-18.exitcode")
   [ "$code" != "0" ] || return 1
 
+  # The supervisor's timer recorded that it fired; status reports a timeout
+  # (not a generic failure) and still carries the real exit code.
+  [ -f "$SANDBOX/.delegate/tasks/TASK-18.timedout" ] || return 1
   local status_out
   status_out=$(bash "$DELEGATE_SH" status TASK-18)
-  echo "$status_out" | grep -q "^STATE=EXITED_FAILED$" || return 1
+  echo "$status_out" | grep -q "^STATE=TIMED_OUT$" || return 1
   echo "$status_out" | grep -q "^EXITCODE=$code$" || return 1
+}
+
+# ─── Test 18b: nonzero exits classify as EXITED_FAILED / LAUNCH_FAILED ──
+
+test_status_failure_classes() {
+  local SANDBOX
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+
+  mkdir -p "$SANDBOX/bin" "$SANDBOX/mockout"
+  init_git_repo "$SANDBOX"
+  create_handoff "$SANDBOX" "TASK-40"
+  create_handoff "$SANDBOX" "TASK-41"
+  cp "$FIXTURES/opencode" "$SANDBOX/bin/"
+  chmod +x "$SANDBOX/bin/opencode"
+  cd "$SANDBOX"
+
+  # Verbose output then exit 3 → a real failure after doing work.
+  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_EXIT=3 MOCK_VERBOSE=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-40 30 < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  wait_for_mock_file "$SANDBOX/.delegate/tasks/TASK-40.exitcode" || return 1
+  local out
+  out=$(bash "$DELEGATE_SH" status TASK-40)
+  echo "$out" | grep -q "^STATE=EXITED_FAILED$" || return 1
+  echo "$out" | grep -q "^EXITCODE=3$" || return 1
+
+  # Near-silent exit 2 → startup failure (Case 1), still with the real code.
+  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_EXIT=2 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-41 30 < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  wait_for_mock_file "$SANDBOX/.delegate/tasks/TASK-41.exitcode" || return 1
+  out=$(bash "$DELEGATE_SH" status TASK-41)
+  echo "$out" | grep -q "^STATE=LAUNCH_FAILED$" || return 1
+  echo "$out" | grep -q "^EXITCODE=2$" || return 1
+}
+
+# ─── Test 18c: relaunch keeps retries, rotates log, refuses while running ─
+
+test_relaunch_semantics() {
+  local SANDBOX
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+
+  mkdir -p "$SANDBOX/bin" "$SANDBOX/mockout"
+  init_git_repo "$SANDBOX"
+  create_handoff "$SANDBOX" "TASK-42"
+  cp "$FIXTURES/opencode" "$SANDBOX/bin/"
+  chmod +x "$SANDBOX/bin/opencode"
+  cd "$SANDBOX"
+  local T="$SANDBOX/.delegate/tasks"
+
+  # First attempt hangs.
+  PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-42 60 < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  wait_for_mock_file "$SANDBOX/mockout/opencode.pid" || return 1
+  local first_pid
+  first_pid=$(cat "$T/TASK-42.pid")
+
+  # A second launch while it runs must be refused — two agents, one worktree.
+  local code=0
+  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-42 60 < /dev/null > "$SANDBOX/out2" 2>&1 || code=$?
+  [ "$code" = 1 ] && grep -q "still running" "$SANDBOX/out2" || return 1
+
+  # stop terminates it (the supervisor then records the exit code).
+  bash "$DELEGATE_SH" stop TASK-42 | grep -q "^STATE=STOPPED$" || return 1
+  kill -0 "$first_pid" 2>/dev/null && return 1
+  [ -f "$T/TASK-42.exitcode" ] || return 1
+  bash "$DELEGATE_SH" stop TASK-42 | grep -q "^STATE=NOT_RUNNING$" || return 1
+  bash "$DELEGATE_SH" status TASK-42 | grep -q "^STATE=STOPPED$" || return 1
+
+  # Self-healing bumps the counter, then relaunches with --continue.
+  echo 1 > "$T/TASK-42.retries"
+  rm -f "$SANDBOX/mockout/opencode.args"
+  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-42 60 --continue < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  [ "$(cat "$T/TASK-42.retries")" = 1 ] || return 1        # never reset
+  [ -f "$T/TASK-42.log.prev" ] || return 1                  # old log kept
+  [ "$(cat "$T/TASK-42.pid")" != "$first_pid" ] || return 1 # fresh PID recorded
+  wait_for_mock_file "$SANDBOX/mockout/opencode.args" || return 1
+  grep -qx -- "--continue" "$SANDBOX/mockout/opencode.args" || return 1
+  wait_for_mock_file "$T/TASK-42.exitcode" || return 1
+  [ "$(cat "$T/TASK-42.exitcode")" = 0 ] || return 1
+  bash "$DELEGATE_SH" status TASK-42 | grep -q "^STATE=EXITED_OK$" || return 1
+}
+
+# ─── Test 18d: --continue / --model map to each runtime's real flags ────
+
+test_continue_and_model_flags() {
+  local rt="$1" SANDBOX args
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+
+  mkdir -p "$SANDBOX/bin" "$SANDBOX/mockout"
+  init_git_repo "$SANDBOX"
+  create_handoff "$SANDBOX" "TASK-43"
+  cp "$FIXTURES/$rt" "$SANDBOX/bin/"
+  chmod +x "$SANDBOX/bin/$rt"
+  cd "$SANDBOX"
+  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_MIMO_HAS_FILE=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" "$rt" TASK-43 30 --continue --model test-model/v1 < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  wait_for_mock_file "$SANDBOX/mockout/$rt.args" || return 1
+  wait_for_mock_file "$SANDBOX/.delegate/tasks/TASK-43.exitcode" || return 1
+  args="$SANDBOX/mockout/$rt.args"
+  [ "$(cat "$SANDBOX/mockout/$rt.cwd")" = "$SANDBOX/.delegate/worktrees/TASK-43" ] || return 1
+  grep -qx "test-model/v1" "$args" || return 1
+  case "$rt" in
+    opencode|mimo) grep -qx -- --continue "$args" && grep -qx -- -m "$args" ;;
+    pi)            grep -qx -- --continue "$args" && grep -qx -- --model "$args" ;;
+    hermes)        grep -qx -- --continue "$args" && grep -qx -- -m "$args" ;;
+    agy)           grep -qx -- --continue "$args" && grep -qx -- --model "$args" ;;
+    # kimi's continue flag is lowercase -c; -C does not exist.
+    kimi)          grep -qx -- -c "$args" && ! grep -qx -- -C "$args" && grep -qx -- -m "$args" ;;
+    # codex resume accepts neither -C nor -s; sandbox goes via -c config.
+    codex)         grep -qx resume "$args" && grep -qx -- --last "$args" &&
+                   ! grep -qx -- -C "$args" && ! grep -qx -- -s "$args" &&
+                   grep -qx 'sandbox_mode="workspace-write"' "$args" &&
+                   grep -q "Continue the task" "$SANDBOX/mockout/codex.stdin" ;;
+  esac
+}
+
+# ─── Test 18e: invalid --model values are refused before launch ─────────
+
+test_reject_bad_model() {
+  local SANDBOX m code
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+  mkdir -p "$SANDBOX/bin"
+  init_git_repo "$SANDBOX"
+  create_handoff "$SANDBOX" "TASK-44"
+  cp "$FIXTURES/opencode" "$SANDBOX/bin/"
+  chmod +x "$SANDBOX/bin/opencode"
+  cd "$SANDBOX"
+  for m in '--auto' 'a b' 'x;touch escape' ''; do
+    code=0
+    PATH="$SANDBOX/bin:$PATH" bash "$DELEGATE_SH" opencode TASK-44 30 --model "$m" > "$SANDBOX/out" 2>&1 || code=$?
+    [ "$code" = 1 ] || return 1
+  done
+  [ ! -f "$SANDBOX/escape" ] && [ ! -f "$SANDBOX/.delegate/tasks/TASK-44.supervisor.sh" ]
+}
+
+# ─── Test 18f: launch keeps .delegate/ out of the main tree's git status ─
+
+test_delegate_dir_ignored() {
+  local SANDBOX
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+  mkdir -p "$SANDBOX/bin" "$SANDBOX/mockout"
+  init_git_repo "$SANDBOX"
+  create_handoff "$SANDBOX" "TASK-45"
+  cp "$FIXTURES/opencode" "$SANDBOX/bin/"
+  chmod +x "$SANDBOX/bin/opencode"
+  cd "$SANDBOX"
+  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-45 30 < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  wait_for_mock_file "$SANDBOX/.delegate/tasks/TASK-45.exitcode" || return 1
+  [ -z "$(git -C "$SANDBOX" status --porcelain -- .delegate)" ] || return 1
+  # Excluded through the never-committed info/exclude, not a tracked .gitignore.
+  [ ! -f "$SANDBOX/.gitignore" ] || return 1
+  # Idempotent: a second launch does not append the pattern again.
+  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-45 30 < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  [ "$(grep -cx '.delegate/' "$SANDBOX/.git/info/exclude")" = 1 ] || return 1
+  wait_for_mock_file "$SANDBOX/.delegate/tasks/TASK-45.exitcode"
 }
 
 # ─── Test 19: status NOT_FOUND for an unknown task ──────────────────────
@@ -915,6 +1088,35 @@ EOF
   echo "$out" | grep -q "^STATE=FAIL$" || return 1
   echo "$out" | grep -q "^EXITCODE=7$" || return 1
   [ "$code" = "7" ] || return 1
+
+  # An early failing check must fail the whole block, even when the last
+  # command succeeds (the block runs under errexit + pipefail).
+  cat > "$SANDBOX/.delegate/tasks/TASK-23.md" <<'EOF'
+# Handoff: TASK-23
+
+## Verification Expectations
+```bash
+false
+echo "last command succeeds"
+```
+EOF
+  local out23 code23=0
+  out23=$(bash "$DELEGATE_SH" verify TASK-23) || code23=$?
+  echo "$out23" | grep -q "^STATE=FAIL$" || return 1
+  [ "$code23" != 0 ] || return 1
+
+  # A failing stage inside a pipeline is caught too (```sh fences accepted).
+  cat > "$SANDBOX/.delegate/tasks/TASK-24.md" <<'EOF'
+# Handoff: TASK-24
+
+## Verification Expectations
+```sh
+(exit 5) | cat
+```
+EOF
+  local out24
+  out24=$(bash "$DELEGATE_SH" verify TASK-24) || true
+  echo "$out24" | grep -q "^STATE=FAIL$" || return 1
 
   # No fenced block at all → NO_VERIFICATION_BLOCK, distinct from FAIL.
   cat > "$SANDBOX/.delegate/tasks/TASK-22.md" <<'EOF'
@@ -997,6 +1199,31 @@ EOF
   [ "$(bash "$DELEGATE_SH" next-id)" = "TASK-10" ] || return 1
 }
 
+# ─── Test 22b: next-id reserves what it hands out ────────────────────────
+#
+# The caller appends its TODO.md block only after next-id returns. Without a
+# reservation, two callers in that window both computed the same id.
+
+test_next_id_reserves() {
+  local SANDBOX a b
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+  cd "$SANDBOX"
+  a=$(bash "$DELEGATE_SH" next-id) || return 1
+  b=$(bash "$DELEGATE_SH" next-id) || return 1
+  [ "$a" = TASK-1 ] && [ "$b" = TASK-2 ] || return 1
+  [ -f "$SANDBOX/.delegate/tasks/TASK-1.reserved" ] || return 1
+  # Parallel callers still get distinct ids.
+  local i ids
+  for i in 1 2 3 4 5; do bash "$DELEGATE_SH" next-id > "$SANDBOX/id.$i" & done
+  wait
+  ids=$(cat "$SANDBOX"/id.* | sort -u | wc -l | tr -d ' ')
+  [ "$ids" = 5 ] || return 1
+  # An existing handoff document counts as used even without a ledger block.
+  create_handoff "$SANDBOX" TASK-20
+  [ "$(bash "$DELEGATE_SH" next-id)" = TASK-21 ] || return 1
+}
+
 # ─── Main: Run all tests ──────────────────────────────────────────────────────
 
 test_missing_handoff && pass "Missing handoff document → exit 1 with correct error" || fail "Missing handoff document → exit 1 with correct error"
@@ -1016,10 +1243,18 @@ test_not_git_repo && pass "Not a git repo → explicitly opted-in project-root l
 test_worktree_reuse && pass "Worktree reuse — second launch for same TASK-N" || fail "Worktree reuse — second launch for same TASK-N"
 test_watchdog_sigterm && pass "Watchdog SIGTERM fires on timeout" || fail "Watchdog SIGTERM fires on timeout"
 test_exit_code_capture && pass "Real exit code captured; watchdog self-cancels on success" || fail "Real exit code captured; watchdog self-cancels on success"
-test_status_failed_exitcode && pass "status reports EXITED_FAILED with the real exit code" || fail "status reports EXITED_FAILED with the real exit code"
+test_status_failed_exitcode && pass "status reports TIMED_OUT with the real exit code" || fail "status reports TIMED_OUT with the real exit code"
 test_status_not_found && pass "status reports NOT_FOUND for an unknown task" || fail "status reports NOT_FOUND for an unknown task"
 test_verify_pass_and_fail && pass "verify runs the handoff's fenced verification block" || fail "verify runs the handoff's fenced verification block"
 test_reconcile_stale && pass "reconcile reports stale in_progress entries only" || fail "reconcile reports stale in_progress entries only"
+test_status_failure_classes && pass "status classifies EXITED_FAILED vs LAUNCH_FAILED by output size" || fail "status classifies EXITED_FAILED vs LAUNCH_FAILED by output size"
+test_relaunch_semantics && pass "Relaunch keeps retries, rotates log, refuses while running; stop works" || fail "Relaunch keeps retries, rotates log, refuses while running; stop works"
+for rt in opencode pi mimo hermes kimi codex agy; do
+  test_continue_and_model_flags "$rt" && pass "$rt --continue/--model map to real CLI flags" || fail "$rt --continue/--model map to real CLI flags"
+done
+test_reject_bad_model && pass "Invalid --model values refused before launch" || fail "Invalid --model values refused before launch"
+test_delegate_dir_ignored && pass ".delegate/ excluded from main-tree git status (idempotent)" || fail ".delegate/ excluded from main-tree git status (idempotent)"
+test_next_id_reserves && pass "next-id reserves ids (sequential and parallel callers)" || fail "next-id reserves ids (sequential and parallel callers)"
 test_next_id_missing_archive && pass "next-id survives a missing TODO-ARCHIVE.md (regression)" || fail "next-id survives a missing TODO-ARCHIVE.md (regression)"
 
 # ─── Standalone summary ───────────────────────────────────────────────────

@@ -1,0 +1,157 @@
+# Upstream sources for every agent CLI the skills drive — the single list of
+# "where facts about each runtime come from". Consumed by:
+#   - tests/check-cli-contract.py          deterministic: installed CLI --help vs
+#                                           the flags delegate.sh relies on
+#   - .github/workflows/cli-contract.yml   runs that check weekly on fresh installs
+#   - .github/workflows/upstream-watch.md  AI watch: validates these URLs, reads
+#                                           docs/changelogs, files issues
+#
+# `verified` = version whose --help the AGENTS.md CLI table was last checked
+# against. `latest_seen` = newest release seen in upstream notes at that time.
+# Every `require` entry is a list of alternatives: at least one must appear in
+# the help text (e.g. opencode renamed its approval-bypass flag).
+last_reviewed: "2026-11-06"
+
+spec:
+  name: Agent Skills specification
+  docs:
+    - https://agentskills.io/specification
+  validator: https://github.com/agentskills/agentskills/tree/main/skills-ref
+
+runtimes:
+  opencode:
+    binary: opencode
+    install: npm install -g opencode-ai
+    docs:
+      - https://opencode.ai/docs/cli/
+      - https://opencode.ai/docs/permissions/
+    changelog:
+      - https://opencode.ai/changelog
+      - https://github.com/anomalyco/opencode/releases
+    verified: "1.18.32"
+    latest_seen: "1.19.5"
+    help:
+      - cmd: [opencode, run, --help]
+        require:
+          - [--dir]
+          - [--file]
+          - [--continue]
+          - [--model]
+          - [--auto, --dangerously-skip-permissions]
+
+  pi:
+    binary: pi
+    install: npm install -g @earendil-works/pi-coding-agent
+    docs:
+      - https://github.com/earendil-works/pi
+    changelog:
+      - https://pi.dev/changelog
+      - https://github.com/earendil-works/pi/releases
+    verified: "1.0.0"
+    latest_seen: "1.5.0"
+    help:
+      - cmd: [pi, --help]
+        require:
+          - [--print]
+          - [--continue]
+          - [--model]
+        # --approve is optional: delegate.sh help-detects it.
+
+  mimo:
+    binary: mimo
+    install: npm install -g @mimo-ai/cli
+    docs:
+      - https://mimo.xiaomi.com/mimocode/cli-options
+    changelog:
+      - https://mimo.xiaomi.com/mimocode/changelog
+    verified: "0.1.13"
+    latest_seen: "0.1.16"
+    help:
+      - cmd: [mimo, run, --help]
+        require:
+          - [--continue]
+          - [--model]
+          - [--file]
+        # --dir and --dangerously-skip-permissions are help-detected; the
+        # official cli-options page does not list --dir for `run`.
+
+  hermes:
+    binary: hermes
+    install: see https://github.com/NousResearch/hermes-agent (installer script)
+    docs:
+      - https://github.com/NousResearch/hermes-agent
+    changelog:
+      - https://github.com/NousResearch/hermes-agent/releases
+    verified: "0.20.4"
+    latest_seen: "0.23.0"
+    help:
+      - cmd: [hermes, chat, --help]
+        require:
+          - [--query]
+          - [--quiet]
+          - [--continue]
+          - [--model]
+          - [--yolo]
+          - [--accept-hooks]
+
+  kimi:
+    binary: kimi
+    install: npm install -g @moonshot-ai/kimi-code
+    docs:
+      - https://moonshotai.github.io/kimi-code/en/reference/kimi-command.html
+    changelog:
+      - https://moonshotai.github.io/kimi-code/en/release-notes/changelog.html
+      - https://github.com/MoonshotAI/kimi-code/releases
+    verified: "0.34.0"
+    latest_seen: "2.5.2"
+    help:
+      - cmd: [kimi, --help]
+        require:
+          - [--prompt]
+          - [--continue]
+          - [--model]
+        # 2.x: --prompt cannot be combined with --yolo/--auto/--plan; print
+        # mode is auto-permission. delegate.sh version-gates -y accordingly.
+
+  codex:
+    binary: codex
+    install: npm install -g @openai/codex
+    docs:
+      # developers.openai.com/codex/* now 308-redirects to learn.chatgpt.com.
+      - https://learn.chatgpt.com/docs/developer-commands?surface=cli
+      - https://learn.chatgpt.com/docs/non-interactive-mode
+    changelog:
+      - https://learn.chatgpt.com/docs/changelog
+    verified: "0.167.0"
+    latest_seen: "0.167.0"
+    help:
+      - cmd: [codex, exec, --help]
+        require:
+          - [--cd]
+          - [--sandbox]
+          - [--model]
+          - [--skip-git-repo-check]
+          - [--dangerously-bypass-approvals-and-sandbox]
+      - cmd: [codex, exec, resume, --help]
+        require:
+          - [--last]
+          - [--config]
+          - [--dangerously-bypass-approvals-and-sandbox]
+
+  agy:
+    binary: agy
+    install: see https://antigravity.google/docs/cli/
+    docs:
+      - https://antigravity.google/docs/cli/reference/
+    changelog:
+      - https://antigravity.google/docs/cli/
+    verified: "1.4.9"
+    latest_seen: "1.4.9"
+    help:
+      - cmd: [agy, --help]
+        require:
+          - [--print]
+          - [--continue]
+          - [--model]
+          - [--add-dir]
+          - [--dangerously-skip-permissions]
