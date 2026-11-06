@@ -1298,6 +1298,122 @@ test_stop_kills_descendants() {
   bash "$DELEGATE_SH" status TASK-51 | grep -q "^STATE=STOPPED$"
 }
 
+# ─── Test 24: stop/timeout markers classify without an exit code ─────────
+#
+# If the supervisor died (session teardown, killed watchdog) no .exitcode is
+# written. A deliberately stopped or timed-out task must still not read as
+# LAUNCH_FAILED, which Step 5 Case 1 would relaunch.
+
+test_status_markers_without_exitcode() {
+  local SANDBOX dead T
+  SANDBOX=$(mktemp -d)
+  T="$SANDBOX/.delegate/tasks"
+  # Remove the .pid before cleanup: it names a reaped pid that cleanup must
+  # not try to kill (a reused pid would belong to someone else).
+  trap "rm -f '$T/TASK-52.pid'; cleanup_sandbox '$SANDBOX'" RETURN
+  mkdir -p "$T"
+  cd "$SANDBOX"
+  true & dead=$!; wait "$dead" 2>/dev/null
+  printf '# Handoff\n' > "$T/TASK-52.md"
+  echo "$dead" > "$T/TASK-52.pid"
+  echo short > "$T/TASK-52.log"
+  : > "$T/TASK-52.stopped"
+  local out
+  out=$(bash "$DELEGATE_SH" status TASK-52)
+  echo "$out" | grep -q "^STATE=STOPPED$" || return 1
+  echo "$out" | grep -q "^EXITCODE=" && return 1
+  rm "$T/TASK-52.stopped"
+  : > "$T/TASK-52.timedout"
+  bash "$DELEGATE_SH" status TASK-52 | grep -q "^STATE=TIMED_OUT$" || return 1
+  # With an exit code the marker still wins and the code is reported.
+  echo 143 > "$T/TASK-52.exitcode"
+  out=$(bash "$DELEGATE_SH" status TASK-52)
+  echo "$out" | grep -q "^STATE=TIMED_OUT$" && echo "$out" | grep -q "^EXITCODE=143$"
+}
+
+# ─── Test 25: relaunch after the worktree directory was deleted by hand ──
+
+test_relaunch_after_worktree_deleted() {
+  local SANDBOX
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+  mkdir -p "$SANDBOX/bin" "$SANDBOX/mockout"
+  init_git_repo "$SANDBOX"
+  create_handoff "$SANDBOX" "TASK-53"
+  cp "$FIXTURES/opencode" "$SANDBOX/bin/"
+  chmod +x "$SANDBOX/bin/opencode"
+  cd "$SANDBOX"
+  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-53 30 < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  wait_for_mock_file "$SANDBOX/.delegate/tasks/TASK-53.exitcode" || return 1
+  rm -rf "$SANDBOX/.delegate/worktrees/TASK-53"
+  git -C "$SANDBOX" worktree list | grep -q prunable || return 1   # precondition
+  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-53 30 < /dev/null > "$SANDBOX/out2" 2>&1 || { cat "$SANDBOX/out2" >&2; return 1; }
+  snapshot_watchdog_children "$SANDBOX"
+  [ -d "$SANDBOX/.delegate/worktrees/TASK-53" ] || return 1
+  [ "$(git -C "$SANDBOX/.delegate/worktrees/TASK-53" symbolic-ref --short HEAD)" = "opencode/TASK-53" ] || return 1
+  wait_for_mock_file "$SANDBOX/.delegate/tasks/TASK-53.exitcode"
+}
+
+# ─── Test 26: status reports STALLED for a silent agent ──────────────────
+#
+# $1 = worktree | unisolated. The mock writes its heartbeat OUTSIDE the
+# sandbox so the only "activity" the scan could see is agent work. In
+# unisolated mode the work dir is the project root, where status's own
+# .delegate bookkeeping used to count as activity (STALLED never fired).
+
+test_status_stalled() {
+  local mode="$1" SANDBOX OUT
+  SANDBOX=$(mktemp -d)
+  OUT=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'; rm -rf '$OUT'" RETURN
+  mkdir -p "$SANDBOX/bin" "$SANDBOX/.delegate/tasks"
+  local env_extra=()
+  if [ "$mode" = worktree ]; then
+    init_git_repo "$SANDBOX"
+  else
+    env_extra=(DELEGATE_ALLOW_UNISOLATED=1)
+  fi
+  create_handoff "$SANDBOX" "TASK-54"
+  cp "$FIXTURES/opencode" "$SANDBOX/bin/"
+  chmod +x "$SANDBOX/bin/opencode"
+  cd "$SANDBOX"
+  env "${env_extra[@]}" PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$OUT" \
+    bash "$DELEGATE_SH" opencode TASK-54 120 < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  wait_for_mock_file "$OUT/opencode.pid" || return 1
+  local work="$SANDBOX/.delegate/worktrees/TASK-54"
+  [ "$mode" = worktree ] || work="$SANDBOX"
+  # First poll establishes the baseline; a second poll with no log growth and
+  # no new files in the work dir is a stall; a new file in the work dir is not.
+  bash "$DELEGATE_SH" status TASK-54 | grep -q "^STATE=RUNNING$" || { bash "$DELEGATE_SH" stop TASK-54 >/dev/null; return 1; }
+  sleep 1.1
+  bash "$DELEGATE_SH" status TASK-54 | grep -q "^STATE=STALLED$" || { bash "$DELEGATE_SH" stop TASK-54 >/dev/null; return 1; }
+  sleep 1.1
+  echo progress > "$work/progress.txt"
+  bash "$DELEGATE_SH" status TASK-54 | grep -q "^STATE=RUNNING$" || { bash "$DELEGATE_SH" stop TASK-54 >/dev/null; return 1; }
+  bash "$DELEGATE_SH" stop TASK-54 | grep -q "^STATE=STOPPED$"
+}
+
+# ─── Test 27: next-id reclaims a stale lock (portable mtime) ─────────────
+
+test_next_id_reclaims_stale_lock() {
+  local SANDBOX start id
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+  cd "$SANDBOX"
+  mkdir -p "$SANDBOX/.delegate/todo.lock"
+  touch -t 200001010000 "$SANDBOX/.delegate/todo.lock" || return 1
+  start=$(date +%s)
+  id=$(bash "$DELEGATE_SH" next-id) || return 1
+  [ "$id" = TASK-1 ] || return 1
+  # Reclaimed immediately, not after the 10s give-up.
+  [ $(( $(date +%s) - start )) -lt 8 ] || return 1
+  [ ! -d "$SANDBOX/.delegate/todo.lock" ]
+}
+
 # ─── Main: Run all tests ──────────────────────────────────────────────────────
 
 test_missing_handoff && pass "Missing handoff document → exit 1 with correct error" || fail "Missing handoff document → exit 1 with correct error"
@@ -1332,6 +1448,12 @@ test_next_id_reserves && pass "next-id reserves ids (sequential and parallel cal
 test_next_id_missing_archive && pass "next-id survives a missing TODO-ARCHIVE.md (regression)" || fail "next-id survives a missing TODO-ARCHIVE.md (regression)"
 test_timeout_kills_descendants && pass "Timeout kills the agent's grandchild (no process group needed)" || fail "Timeout kills the agent's grandchild (no process group needed)"
 test_stop_kills_descendants && pass "stop kills the agent's grandchild (no process group needed)" || fail "stop kills the agent's grandchild (no process group needed)"
+test_status_markers_without_exitcode && pass "status: STOPPED/TIMED_OUT markers win without an exit code" || fail "status: STOPPED/TIMED_OUT markers win without an exit code"
+test_relaunch_after_worktree_deleted && pass "Relaunch after the worktree dir was deleted by hand (prune)" || fail "Relaunch after the worktree dir was deleted by hand (prune)"
+for mode in worktree unisolated; do
+  test_status_stalled "$mode" && pass "status reports STALLED for a silent agent ($mode)" || fail "status reports STALLED for a silent agent ($mode)"
+done
+test_next_id_reclaims_stale_lock && pass "next-id reclaims a stale lock via portable mtime" || fail "next-id reclaims a stale lock via portable mtime"
 
 # ─── Standalone summary ───────────────────────────────────────────────────
 

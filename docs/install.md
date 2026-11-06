@@ -294,7 +294,7 @@ The agent CLI isn't on PATH. Install it (see `docs/usage.md`) and restart your t
 Each skill folder must keep its own `workflow.md` alongside `SKILL.md` — it's not shared from elsewhere. Confirm `ls ~/.agents/skills/delegate-to-opencode/workflow.md`; if it's a partial copy (e.g. only `SKILL.md` was copied), re-run the install command for that skill.
 
 **Worktree creation fails**
-Requires a git repo with at least one commit: `git init && git commit --allow-empty -m "init"`
+Requires a git repo with at least one commit: `git init && git commit --allow-empty -m "init"`. The launcher's error includes git's own message. A worktree directory that was deleted by hand stays registered ("prunable" in `git worktree list`); the launcher prunes it automatically before re-adding, so a task can be relaunched after a manual cleanup.
 
 **Hermes skill not appearing**
 Run `hermes skills list`. First confirm which `config.yaml` Hermes actually reads — `echo $HERMES_HOME` (defaults to `~/.hermes` on macOS/Linux, `%LOCALAPPDATA%\hermes` on Windows). Editing the wrong one is silent: no error, the skill just never shows up. Check `external_dirs` in `$HERMES_HOME/config.yaml` points to the correct path and that Hermes was restarted after the config change.

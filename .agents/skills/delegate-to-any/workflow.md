@@ -159,7 +159,7 @@ RUNTIME=<opencode|omo|pi|mimo|hermes|kimi|codex|agy — whichever runtime will r
 git worktree add .delegate/worktrees/TASK-$TASK_N -b $RUNTIME/TASK-$TASK_N
 ```
 
-(The launcher also creates this worktree itself if it is missing, and refuses to reuse a directory that is not a worktree of this repository on exactly that branch — so a stale or foreign directory at that path is an error, never silently adopted.)
+(The launcher also creates this worktree itself if it is missing — pruning a registration left behind by a worktree directory that was deleted by hand — and refuses to reuse a directory that is not a worktree of this repository on exactly that branch — so a stale or foreign directory at that path is an error, never silently adopted.)
 
 If the project is not a git repo with a committed HEAD, or worktree creation fails,
 stop delegation. Only an explicit operator opt-in (`DELEGATE_ALLOW_UNISOLATED=1`)

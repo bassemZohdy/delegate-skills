@@ -65,9 +65,10 @@
 #                            never receive the same id
 #   TASK-N.timedout          written by the supervisor when the timeout fired
 #   TASK-N.stopped           written by `stop` (deliberate termination)
-#   TASK-N.watchdog.pid      supervisor process id (kill this to force-abandon
-#                            a task early; not needed on normal completion —
-#                            the supervisor cancels its own timer)
+#   TASK-N.watchdog.pid      supervisor process id (informational — to end a
+#                            task early use `delegate.sh stop`; killing the
+#                            supervisor leaves the agent and its timer running
+#                            and no exit code is ever recorded)
 #   TASK-N.exitcode          agent's real exit code, written once it exits
 #   TASK-N.fingerprint       best-effort process identity (guards PID reuse)
 #   TASK-N.pgid              process-group id, only written when verified safe
@@ -166,6 +167,18 @@ validate_worktree() {
 }
 
 pid_alive() { kill -0 "$1" 2>/dev/null; }
+
+# Modification time of $1 as epoch seconds, portably: GNU `stat -c`, then
+# BSD/macOS `stat -f`, then GNU `date -r`. (BSD `date -r` means "format these
+# epoch SECONDS", so it must never be the first choice — relying on it alone
+# silently disabled the stale-lock check on macOS.)
+_mtime_epoch() {
+  local out
+  for out in "$(stat -c %Y "$1" 2>/dev/null)" "$(stat -f %m "$1" 2>/dev/null)" "$(date -r "$1" +%s 2>/dev/null)"; do
+    [[ "$out" =~ ^[0-9]+$ ]] && { printf '%s' "$out"; return 0; }
+  done
+  return 1
+}
 
 # ── ps portability layer ──────────────────────────────────────────────────
 # `ps -o <field>=` (custom output format) is the POSIX-ish way to pull a
@@ -409,12 +422,21 @@ EOF
     ensure_delegate_ignored
     if [ -d "$WORK_DIR" ]; then
       validate_worktree "$WORK_DIR" "$BRANCH" || return 1
-    elif git worktree add "$WORK_DIR" -b "$BRANCH" 2>/dev/null || \
-         git worktree add "$WORK_DIR" "$BRANCH" 2>/dev/null; then
-      validate_delegate_paths "$TASK_ID"
-      validate_worktree "$WORK_DIR" "$BRANCH" || return 1
     else
-      ISOLATION_FAILURE="worktree creation failed"
+      # A worktree directory deleted by hand stays registered ("prunable" in
+      # `git worktree list`) and blocks `git worktree add` at the same path
+      # until pruned — without this a task could never be resumed after a
+      # manual cleanup, and the error blamed isolation.
+      git worktree prune 2>/dev/null || true
+      local WT_ERR=""
+      if WT_ERR=$(git worktree add "$WORK_DIR" -b "$BRANCH" 2>&1) || \
+         WT_ERR=$(git worktree add "$WORK_DIR" "$BRANCH" 2>&1); then
+        validate_delegate_paths "$TASK_ID"
+        validate_worktree "$WORK_DIR" "$BRANCH" || return 1
+      else
+        WT_ERR="${WT_ERR##*$'\n'}"
+        ISOLATION_FAILURE="worktree creation failed${WT_ERR:+: $WT_ERR}"
+      fi
     fi
   else
     ISOLATION_FAILURE="not a git repo with a committed HEAD"
@@ -760,7 +782,11 @@ cmd_status() {
     local FS_ACTIVITY="unknown"
     if [ -d "$WORK_DIR" ]; then
       if [ -f "$MTIME_MARKER" ]; then
-        if find "$WORK_DIR" -newer "$MTIME_MARKER" -type f 2>/dev/null | grep -q .; then
+        # Prune .delegate (status's own bookkeeping files live there whenever
+        # the project root is the work dir) and .git — neither is agent work,
+        # and counting them made a silent agent look busy forever.
+        if find "$WORK_DIR" \( -path "$WORK_DIR/.delegate" -o -path "$WORK_DIR/.git" \) -prune \
+             -o -type f -newer "$MTIME_MARKER" -print 2>/dev/null | grep -q .; then
           FS_ACTIVITY="yes"
         else
           FS_ACTIVITY="no"
@@ -780,33 +806,29 @@ cmd_status() {
     return 0
   fi
 
-  # Process is gone — classify using the real exit code when we have one.
-  # A timeout outranks the exit code (the agent was killed, so its code is
-  # just the signal); a nonzero exit with almost no output is a startup
-  # failure (bad flag, auth, missing model) — workflow Step 5, Case 1.
-  if [ -f "$EXITCODE_FILE" ]; then
-    local CODE
-    CODE=$(cat "$EXITCODE_FILE" 2>/dev/null) || CODE=""
-    if [ -f "$TASKS_DIR/$TASK_ID.timedout" ]; then
-      echo "STATE=TIMED_OUT"
-      echo "EXITCODE=$CODE"
-    elif [ -f "$TASKS_DIR/$TASK_ID.stopped" ]; then
-      echo "STATE=STOPPED"
-      echo "EXITCODE=$CODE"
-    elif [ "$CODE" = "0" ]; then
-      echo "STATE=EXITED_OK"
-    elif [ "$LOG_SIZE" -lt 500 ]; then
-      echo "STATE=LAUNCH_FAILED"
-      echo "EXITCODE=$CODE"
-    else
-      echo "STATE=EXITED_FAILED"
-      echo "EXITCODE=$CODE"
-    fi
+  # Process is gone — classify. The timeout / stop markers come first and do
+  # not depend on an exit code: if the supervisor itself died (session
+  # teardown, a killed watchdog) no .exitcode is ever written, and a task that
+  # was deliberately stopped must not read as a launch failure that Step 5
+  # Case 1 would relaunch. Then the real exit code when we have one; a nonzero
+  # exit with almost no output is a startup failure (bad flag, auth, missing
+  # model) — workflow Step 5, Case 1.
+  local CODE=""
+  [ -f "$EXITCODE_FILE" ] && { CODE=$(cat "$EXITCODE_FILE" 2>/dev/null) || CODE=""; }
+  if [ -f "$TASKS_DIR/$TASK_ID.timedout" ]; then
+    echo "STATE=TIMED_OUT"
+  elif [ -f "$TASKS_DIR/$TASK_ID.stopped" ]; then
+    echo "STATE=STOPPED"
+  elif [ -z "$CODE" ]; then
+    if [ "$LOG_SIZE" -lt 500 ]; then echo "STATE=LAUNCH_FAILED"; else echo "STATE=EXITED_UNKNOWN"; fi
+  elif [ "$CODE" = "0" ]; then
+    echo "STATE=EXITED_OK"
   elif [ "$LOG_SIZE" -lt 500 ]; then
     echo "STATE=LAUNCH_FAILED"
   else
-    echo "STATE=EXITED_UNKNOWN"
+    echo "STATE=EXITED_FAILED"
   fi
+  [ -n "$CODE" ] && echo "EXITCODE=$CODE"
   echo "PID=$PID"
   echo "LOG_SIZE=$LOG_SIZE"
   echo "RETRIES=$RETRIES"
@@ -919,7 +941,7 @@ cmd_next_id() {
   while ! mkdir "$LOCK_DIR" 2>/dev/null; do
     if [ -d "$LOCK_DIR" ]; then
       local mtime age
-      mtime=$(date -r "$LOCK_DIR" +%s 2>/dev/null) || mtime=""
+      mtime=$(_mtime_epoch "$LOCK_DIR") || mtime=""
       if [ -n "$mtime" ]; then
         age=$(( $(date +%s) - mtime ))
         if [ "$age" -gt "$STALE_AFTER" ]; then

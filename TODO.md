@@ -88,11 +88,13 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-15] `status` reports LAUNCH_FAILED instead of STOPPED/TIMED_OUT when the supervisor died before writing `.exitcode`
-- status: pending
+- status: completed
 - priority: P2
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: (cleared)
+- reviewed: 2026-11-06T11:30:00Z
+- outcome: markers checked before the exit code; `EXITCODE=` printed only when known; watchdog.pid comment points at `stop`; test_status_markers_without_exitcode
+- agent: claude-code / claude-fable-5-1
+- started: 2026-11-06T11:10:00Z
 - timeout: 600
 - worktree: none
 - branch: none
@@ -111,10 +113,10 @@ The `.stopped` / `.timedout` checks sit inside `if [ -f "$EXITCODE_FILE" ]` (`de
 Marker files are checked before the exit-code branch; `EXITCODE=` is printed only when known; the header comment points at `delegate.sh stop`.
 
 ### Sub-tasks
-- [ ] Reorder: `TIMED_OUT` / `STOPPED` first (with `EXITCODE=` if the file exists), then exit-code classes, then the no-exit-code fallback
-- [ ] Fix the `TASK-N.watchdog.pid` comment ("kill this to force-abandon" leaves the agent and timer running) → "use `delegate.sh stop`"
-- [ ] Behavior test: dead pid + marker, no `.exitcode` → `STATE=STOPPED` / `STATE=TIMED_OUT`
-- [ ] docs/usage.md state list unchanged; AGENTS.md "Timeout / stop markers" bullet mention the ordering
+- [x] Reorder: `TIMED_OUT` / `STOPPED` first (with `EXITCODE=` if the file exists), then exit-code classes, then the no-exit-code fallback
+- [x] Fix the `TASK-N.watchdog.pid` comment ("kill this to force-abandon" leaves the agent and timer running) → "use `delegate.sh stop`"
+- [x] Behavior test: dead pid + marker, no `.exitcode` → `STATE=STOPPED` / `STATE=TIMED_OUT`
+- [x] docs/usage.md state list unchanged; AGENTS.md "Timeout / stop markers" bullet mention the ordering
 
 ### Verification
 ```bash
@@ -122,11 +124,13 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-16] Relaunch fails after a worktree directory was deleted without `git worktree prune`
-- status: pending
+- status: completed
 - priority: P2
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: (cleared)
+- reviewed: 2026-11-06T11:30:00Z
+- outcome: launch prunes before `git worktree add` and reports git's own error; test_relaunch_after_worktree_deleted; docs/install.md + workflow.md Step 2 note
+- agent: claude-code / claude-fable-5-1
+- started: 2026-11-06T11:10:00Z
 - timeout: 600
 - worktree: none
 - branch: none
@@ -145,10 +149,10 @@ bash tests/run-tests.sh
 Launch runs `git worktree prune` before creating a worktree and reports the real git error on failure.
 
 ### Sub-tasks
-- [ ] Call `git worktree prune` (quiet) when `$WORK_DIR` does not exist, before `git worktree add`
-- [ ] Capture git's stderr from both `worktree add` attempts and include the last line in the ISOLATION_FAILURE message
-- [ ] Behavior test: launch, remove the worktree dir, relaunch → exit 0, branch reused
-- [ ] workflow.md Step 2 / docs/install.md "Worktree creation fails" troubleshooting: mention prune
+- [x] Call `git worktree prune` (quiet) when `$WORK_DIR` does not exist, before `git worktree add`
+- [x] Capture git's stderr from both `worktree add` attempts and include the last line in the ISOLATION_FAILURE message
+- [x] Behavior test: launch, remove the worktree dir, relaunch → exit 0, branch reused
+- [x] workflow.md Step 2 / docs/install.md "Worktree creation fails" troubleshooting: mention prune
 
 ### Verification
 ```bash
@@ -156,11 +160,13 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-17] Stall detection never fires in unisolated mode (status's own files count as worktree activity)
-- status: pending
+- status: completed
 - priority: P2
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: (cleared)
+- reviewed: 2026-11-06T11:30:00Z
+- outcome: the activity scan prunes `.delegate` and `.git`; test_status_stalled covers worktree and unisolated modes (RUNNING → STALLED → RUNNING after a write)
+- agent: claude-code / claude-fable-5-1
+- started: 2026-11-06T11:10:00Z
 - timeout: 600
 - worktree: none
 - branch: none
@@ -179,9 +185,9 @@ With `DELEGATE_ALLOW_UNISOLATED=1`, `WORK_DIR` is the project root, so the `find
 `find` prunes `.delegate` and `.git`; a behavior test proves `STALLED` on the second poll for a silent agent (worktree and unisolated).
 
 ### Sub-tasks
-- [ ] Add `-path "$WORK_DIR/.delegate" -prune -o -path "$WORK_DIR/.git" -prune -o … -type f -newer … -print` to the scan
-- [ ] Behavior test: `MOCK_HANG=1` with `MOCK_OUT_DIR` outside the sandbox; poll twice → `STALLED`; then a file written in the worktree → `RUNNING`
-- [ ] Same test in unisolated mode
+- [x] Add `-path "$WORK_DIR/.delegate" -prune -o -path "$WORK_DIR/.git" -prune -o … -type f -newer … -print` to the scan
+- [x] Behavior test: `MOCK_HANG=1` with `MOCK_OUT_DIR` outside the sandbox; poll twice → `STALLED`; then a file written in the worktree → `RUNNING`
+- [x] Same test in unisolated mode
 
 ### Verification
 ```bash
@@ -189,11 +195,13 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-18] `next-id` stale-lock self-heal is silently disabled on macOS (`date -r` is BSD "seconds", not "file")
-- status: pending
+- status: completed
 - priority: P2
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: (cleared)
+- reviewed: 2026-11-06T11:30:00Z
+- outcome: `_mtime_epoch` (stat -c → stat -f → date -r) backs the staleness check; test_next_id_reclaims_stale_lock; no other GNU-only coreutils flags found in the launcher (`date -r`, `readlink -f`, `sed -i`, `sort -V` absent)
+- agent: claude-code / claude-fable-5-1
+- started: 2026-11-06T11:10:00Z
 - timeout: 600
 - worktree: none
 - branch: none
@@ -212,9 +220,9 @@ bash tests/run-tests.sh
 Lock age is computed with a portable helper (`stat -c %Y` → `stat -f %m` → `find -mmin` fallback); a unit test fakes an old lock dir and expects it to be reclaimed.
 
 ### Sub-tasks
-- [ ] Add `_mtime_epoch PATH` with GNU/BSD `stat` fallbacks; use it in `cmd_next_id`
-- [ ] Behavior test: pre-create `.delegate/todo.lock` with `touch -d '-60 seconds'` (or `-t`) → `next-id` succeeds and the lock is gone afterwards
-- [ ] Grep the launcher for other GNU-only invocations (`date -r`, `readlink -f`, `sed -i`) and note macOS in AGENTS.md "Known gotchas"
+- [x] Add `_mtime_epoch PATH` with GNU/BSD `stat` fallbacks; use it in `cmd_next_id`
+- [x] Behavior test: pre-create `.delegate/todo.lock` with `touch -d '-60 seconds'` (or `-t`) → `next-id` succeeds and the lock is gone afterwards
+- [x] Grep the launcher for other GNU-only invocations (`date -r`, `readlink -f`, `sed -i`) and note macOS in AGENTS.md "Known gotchas"
 
 ### Verification
 ```bash
