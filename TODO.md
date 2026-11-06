@@ -13,11 +13,13 @@ when starting one. Priorities: P1 = breaks a documented path, P2 = wrong result
 or missing safeguard, P3 = improvement.
 
 ## [TASK-13] Timeout and stop leave the agent's child processes alive when no process group exists (Windows, macOS)
-- status: pending
+- status: completed
 - priority: P1
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: (cleared)
+- reviewed: 2026-11-06T11:05:00Z
+- outcome: `_descendants`/`_signal_descendants` (ps-table walk, deepest first) used by `stop` and by the supervisor's timer; launch now fails instead of printing PID=unknown; two grandchild tests pass on Windows
+- agent: claude-code / claude-fable-5-1
+- started: 2026-11-06T10:50:00Z
 - timeout: 1800
 - worktree: none
 - branch: none
@@ -36,11 +38,11 @@ The supervisor's timer (`helpers/scripts/delegate.sh:629-644`, `signal_agent`) s
 `signal_agent` in the generated supervisor and `kill_tree` share one recursive descendant-kill helper; a new behavior test launches a two-level mock and asserts the leaf process is gone after a timeout and after `stop`.
 
 ### Sub-tasks
-- [ ] Add `_descendants PID` (depth-first: `pkill`-free; `ps -eo pid=,ppid=` with the `_ps_children_fixed` MSYS fallback) and make `kill_tree` signal deepest-first, then the pgid when verified, then the PID
-- [ ] Export it like `_ps_fixed_field` (`delegate.sh:661`) and call it from the supervisor's `signal_agent` for both TERM and KILL
-- [ ] Launch must not print `PID=unknown` and exit 0 when the supervisor never records a PID within the wait window (`delegate.sh:675-682`): fail (exit 1) and kill the supervisor, otherwise `status` → `NOT_FOUND` → the workflow's "launch it" row starts a second agent
-- [ ] Behavior test: wrapper mock whose child is the heartbeat mock; after timeout and after `stop`, the child's pid (from `MOCK_OUT_DIR/*.pid`) must be dead; run on Windows and Ubuntu CI
-- [ ] Update AGENTS.md "Process-group kill" bullet and docs/usage.md "Killing a stalled or timed-out process" paragraph
+- [x] Add `_descendants PID` (depth-first: `pkill`-free; `ps -eo pid=,ppid=` with the `_ps_children_fixed` MSYS fallback) and make `kill_tree` signal deepest-first, then the pgid when verified, then the PID
+- [x] Export it like `_ps_fixed_field` (`delegate.sh:661`) and call it from the supervisor's `signal_agent` for both TERM and KILL
+- [x] Launch must not print `PID=unknown` and exit 0 when the supervisor never records a PID within the wait window (`delegate.sh:675-682`): fail (exit 1) and kill the supervisor, otherwise `status` → `NOT_FOUND` → the workflow's "launch it" row starts a second agent
+- [x] Behavior test: wrapper mock whose child is the heartbeat mock; after timeout and after `stop`, the child's pid (from `MOCK_OUT_DIR/*.pid`) must be dead; run on Windows and Ubuntu CI
+- [x] Update AGENTS.md "Process-group kill" bullet and docs/usage.md "Killing a stalled or timed-out process" paragraph
 
 ### Verification
 ```bash

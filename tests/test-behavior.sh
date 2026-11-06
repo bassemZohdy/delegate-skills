@@ -1224,6 +1224,80 @@ test_next_id_reserves() {
   [ "$(bash "$DELEGATE_SH" next-id)" = TASK-21 ] || return 1
 }
 
+# ─── Test 23: timeout and stop reach the agent's descendants ─────────────
+#
+# The launched PID is often not the engine: an npm shim that does not exec, a
+# CLI that spawns its worker, the agent's own shells and test runners. Without
+# a process group (no setsid on Git Bash or stock macOS) only a recursive
+# descendant kill reaches them. The fixture launches a wrapper whose GRANDCHILD
+# is the hanging mock; the mock's own pid is what must die.
+
+_descendant_fixture() {
+  local sandbox="$1"
+  mkdir -p "$sandbox/bin" "$sandbox/mockout"
+  init_git_repo "$sandbox"
+  cp "$FIXTURES/agy" "$sandbox/bin/agy-real"
+  cat > "$sandbox/bin/agy" <<'EOF'
+#!/bin/bash
+# wrapper -> bash -c -> agy-real: the real agent is a grandchild, never exec'd
+bash -c 'bash "$1" "${@:2}"' _ "$(dirname "$0")/agy-real" "$@"
+EOF
+  chmod +x "$sandbox/bin/agy" "$sandbox/bin/agy-real"
+}
+
+# Waits until the real mock recorded TERM (its trap writes KILLED) and its pid
+# is gone. $1 = sandbox, $2 = real pid. Kills the leftover on failure so a
+# failing test never leaks a hung process.
+_wait_descendant_dead() {
+  local sandbox="$1" real_pid="$2" waited=0
+  while [ "$waited" -lt 100 ]; do
+    snapshot_watchdog_children "$sandbox"
+    grep -q KILLED "$sandbox/mockout/agy.status" 2>/dev/null && ! kill -0 "$real_pid" 2>/dev/null && return 0
+    sleep 0.1; waited=$((waited + 1))
+  done
+  kill -KILL "$real_pid" 2>/dev/null
+  return 1
+}
+
+test_timeout_kills_descendants() {
+  local SANDBOX
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+  _descendant_fixture "$SANDBOX"
+  create_handoff "$SANDBOX" "TASK-50"
+  cd "$SANDBOX"
+  PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" agy TASK-50 2 < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  wait_for_mock_file "$SANDBOX/mockout/agy.pid" || return 1
+  local real_pid
+  real_pid=$(cat "$SANDBOX/mockout/agy.pid")
+  # Sanity: the recorded PID is the wrapper, not the engine.
+  [ "$real_pid" != "$(cat "$SANDBOX/.delegate/tasks/TASK-50.pid")" ] || { kill -KILL "$real_pid"; return 1; }
+  # The timer fires at 2s and must TERM the grandchild, not just the wrapper.
+  _wait_descendant_dead "$SANDBOX" "$real_pid" || return 1
+  wait_for_mock_file "$SANDBOX/.delegate/tasks/TASK-50.timedout" || return 1
+  bash "$DELEGATE_SH" status TASK-50 | grep -q "^STATE=TIMED_OUT$"
+}
+
+test_stop_kills_descendants() {
+  local SANDBOX
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+  _descendant_fixture "$SANDBOX"
+  create_handoff "$SANDBOX" "TASK-51"
+  cd "$SANDBOX"
+  PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" agy TASK-51 120 < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  wait_for_mock_file "$SANDBOX/mockout/agy.pid" || return 1
+  local real_pid
+  real_pid=$(cat "$SANDBOX/mockout/agy.pid")
+  bash "$DELEGATE_SH" stop TASK-51 | grep -q "^STATE=STOPPED$" || { kill -KILL "$real_pid"; return 1; }
+  _wait_descendant_dead "$SANDBOX" "$real_pid" || return 1
+  bash "$DELEGATE_SH" status TASK-51 | grep -q "^STATE=STOPPED$"
+}
+
 # ─── Main: Run all tests ──────────────────────────────────────────────────────
 
 test_missing_handoff && pass "Missing handoff document → exit 1 with correct error" || fail "Missing handoff document → exit 1 with correct error"
@@ -1256,6 +1330,8 @@ test_reject_bad_model && pass "Invalid --model values refused before launch" || 
 test_delegate_dir_ignored && pass ".delegate/ excluded from main-tree git status (idempotent)" || fail ".delegate/ excluded from main-tree git status (idempotent)"
 test_next_id_reserves && pass "next-id reserves ids (sequential and parallel callers)" || fail "next-id reserves ids (sequential and parallel callers)"
 test_next_id_missing_archive && pass "next-id survives a missing TODO-ARCHIVE.md (regression)" || fail "next-id survives a missing TODO-ARCHIVE.md (regression)"
+test_timeout_kills_descendants && pass "Timeout kills the agent's grandchild (no process group needed)" || fail "Timeout kills the agent's grandchild (no process group needed)"
+test_stop_kills_descendants && pass "stop kills the agent's grandchild (no process group needed)" || fail "stop kills the agent's grandchild (no process group needed)"
 
 # ─── Standalone summary ───────────────────────────────────────────────────
 

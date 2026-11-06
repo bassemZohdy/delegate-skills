@@ -190,13 +190,45 @@ _ps_fixed_field() {
     }'
 }
 
-# Children of $1, via a fixed-format `ps -ef` fallback (used when neither
-# pkill nor `ps -eo pid=,ppid=` is available).
-_ps_children_fixed() {
-  local ppid="$1"
-  ps -ef 2>/dev/null | awk -v p="$ppid" '
-    NR==1 { for (i=1;i<=NF;i++) { if (toupper($i)=="PID") pidcol=i; if (toupper($i)=="PPID") ppidcol=i }; next }
-    ppidcol && $ppidcol==p { print $pidcol }'
+# Every descendant of $1 (children, grandchildren, ...), deepest first, one
+# PID per line. The launched PID is often not the engine — an npm shim that
+# does not exec, a CLI that spawns its worker, the agent's own shells and test
+# runners — and without a process group (no setsid on Git Bash or stock
+# macOS) only a recursive walk reaches them. Uses `ps -eo pid=,ppid=` where
+# supported, else the fixed-column MSYS fallback (header-mapped, like
+# _ps_fixed_field). Best-effort: an empty result means "no children found".
+_descendants() {
+  local root="$1" table
+  table=$(ps -eo pid=,ppid= 2>/dev/null) || table=""
+  if [ -z "$table" ]; then
+    table=$(ps -ef 2>/dev/null | awk '
+      NR==1 { for (i=1;i<=NF;i++) { if (toupper($i)=="PID") p=i; if (toupper($i)=="PPID") pp=i }; next }
+      p && pp { print $p, $pp }')
+  fi
+  [ -n "$table" ] || return 0
+  printf '%s\n' "$table" | awk -v root="$root" '
+    NF >= 2 { kids[$2] = kids[$2] " " $1 }
+    END {
+      n = 0; head = 0; tail = 1; queue[0] = root; seen[root] = 1
+      while (head < tail) {
+        m = split(kids[queue[head++]], c, " ")
+        for (i = 1; i <= m; i++)
+          if (c[i] != "" && !(c[i] in seen)) { seen[c[i]] = 1; queue[tail++] = c[i]; out[n++] = c[i] }
+      }
+      for (i = n - 1; i >= 0; i--) print out[i]
+    }'
+}
+
+# Signal $2 (default TERM) to every descendant of $1, deepest first. Returns 0
+# even when nothing was found or signalled.
+_signal_descendants() {
+  local pid="$1" sig="${2:-TERM}" victims child
+  victims=$(_descendants "$pid") || victims=""
+  [ -n "$victims" ] || return 0
+  printf '%s\n' "$victims" | while read -r child; do
+    [ -n "$child" ] && kill "-$sig" "$child" 2>/dev/null || true
+  done
+  return 0
 }
 
 # Best-effort process identity check — never blocks core functionality if the
@@ -259,20 +291,9 @@ kill_tree() {
     fi
   fi
 
-  # Children first (covers agents that spawn helper processes), via whichever
-  # child-lookup mechanism the platform provides.
-  if command -v pkill &>/dev/null; then
-    pkill "-$sig" -P "$pid" 2>/dev/null || true
-  else
-    local children
-    # `|| true`: MSYS ps rejects -o, and under errexit+pipefail that failure
-    # would abort the whole kill instead of falling through to the fallback.
-    children=$(ps -eo pid=,ppid= 2>/dev/null | awk -v p="$pid" '$2==p {print $1}') || true
-    [ -n "$children" ] || children=$(_ps_children_fixed "$pid") || true
-    if [ -n "$children" ]; then
-      printf '%s\n' "$children" | while read -r child; do kill "-$sig" "$child" 2>/dev/null || true; done
-    fi
-  fi
+  # Descendants first, deepest first (covers agents that spawn shells, test
+  # runners or helper processes — and wrappers whose child is the real agent).
+  _signal_descendants "$pid" "$sig"
 
   # Whole process group, but ONLY if launch verified this pid is its own
   # group leader — `kill -SIG -PID` otherwise risks hitting an unrelated,
@@ -624,9 +645,12 @@ PGID=\$(ps -o pgid= -p "\$RUNTIME_PID" 2>/dev/null | tr -d ' ') || PGID=""
 
 # Timer. Its sleeps run as waited-on children so cancelling the timer also
 # reaps the sleep instead of orphaning it. On expiry it records the timeout
-# and signals the agent's whole process group when launch verified the agent
-# leads its own group (setsid), otherwise the agent itself.
+# and signals every descendant of the agent (deepest first — the engine
+# behind a wrapper, the agent's shells and test runners), then the agent's
+# whole process group when launch verified it leads one (setsid), then the
+# agent itself.
 signal_agent() {
+  _signal_descendants "\$RUNTIME_PID" "\$1"
   if [ -s "\$PGID_FILE" ] && [ "\$(cat "\$PGID_FILE" 2>/dev/null)" = "\$RUNTIME_PID" ]; then
     kill "-\$1" "-\$RUNTIME_PID" 2>/dev/null
   fi
@@ -656,9 +680,9 @@ SUP
   chmod +x "$SUP_FILE"
 
   # Exported so the supervisor (a separate bash process invoked below) can
-  # call the same Cygwin/MSYS-safe ps fallback used elsewhere in this script,
+  # call the same Cygwin/MSYS-safe ps helpers used elsewhere in this script,
   # without duplicating the awk logic in the generated file.
-  export -f _ps_fixed_field
+  export -f _ps_fixed_field _descendants _signal_descendants
 
   # ── Launch the supervisor, nohup'd so it survives the calling session ───
   nohup bash "$SUP_FILE" > "$LOG_FILE" 2>&1 &
@@ -671,15 +695,25 @@ SUP
   [ -f "$TASKS_DIR/$TASK_ID.retries" ] || echo 0 > "$TASKS_DIR/$TASK_ID.retries"
 
   # Wait for the supervisor to record the real agent PID before reporting —
-  # callers read PID_FILE immediately after this script returns.
+  # callers read PID_FILE immediately after this script returns. If it never
+  # appears, nothing can monitor this attempt: refusing (and tearing the
+  # supervisor down) beats printing PID=unknown with exit 0, after which
+  # `status` says NOT_FOUND and the workflow launches a second agent.
   local waited=0
-  while [ ! -s "$PID_FILE" ] && [ "$waited" -lt 50 ]; do
+  while [ ! -s "$PID_FILE" ] && [ "$waited" -lt 100 ]; do
     sleep 0.1
     waited=$((waited + 1))
   done
+  if [ ! -s "$PID_FILE" ]; then
+    _signal_descendants "$SUPERVISOR_PID" KILL
+    kill -KILL "$SUPERVISOR_PID" 2>/dev/null || true
+    rm -f "$WATCHDOG_FILE"
+    echo "ERROR: $TASK_ID supervisor did not record an agent PID within 10s — launch aborted (see $LOG_FILE)." >&2
+    return 1
+  fi
 
   # ── Report ────────────────────────────────────────────────────────────
-  echo "PID=$(cat "$PID_FILE" 2>/dev/null || echo unknown)"
+  echo "PID=$(cat "$PID_FILE")"
   echo "LOG=$LOG_FILE"
   echo "WORK_DIR=$WORK_DIR"
 }

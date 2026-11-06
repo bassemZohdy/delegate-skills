@@ -167,7 +167,7 @@ The skill monitors the agent and recovers from common failure modes:
 
 ### Timeout watchdog
 
-Each launch gets a background watchdog: SIGTERM after the configured timeout, SIGKILL after 30 seconds if still alive. With the launcher, the watchdog lives inside a supervisor process that cancels it the moment the agent exits and records the timeout so `status` reports `TIMED_OUT`. Timeout tiers:
+Each launch gets a background watchdog: SIGTERM after the configured timeout, SIGKILL after 30 seconds if still alive. With the launcher, the watchdog lives inside a supervisor process that cancels it the moment the agent exits, records the timeout so `status` reports `TIMED_OUT`, and signals every descendant of the agent (deepest first) — so a wrapper script, a spawned worker or a running test suite dies with it even where no process group exists (Git Bash, macOS). Timeout tiers:
 
 | Tier | Task type | Timeout |
 |------|-----------|---------|

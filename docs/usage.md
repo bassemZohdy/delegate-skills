@@ -137,7 +137,7 @@ The skill monitors the agent and recovers automatically (via the launcher's `sta
 
 Retry count is tracked in `TODO.md` (`retries:` field) and in `.delegate/tasks/TASK-N.retries`.
 
-Killing a stalled or timed-out process (launcher only) is itself resilient: it never signals a PID that no longer matches the process fingerprint recorded at launch (guards against an unrelated process reusing that PID), and it terminates the agent's child processes too, not just the single top-level PID.
+Killing a stalled or timed-out process (launcher only) is itself resilient: it never signals a PID that no longer matches the process fingerprint recorded at launch (guards against an unrelated process reusing that PID), and it terminates every descendant process — deepest first: the engine behind a wrapper script, the agent's own shells and test runners — not just the single top-level PID. That recursive walk is what makes timeouts reliable where no process group is available (Git Bash on Windows, stock macOS); where `setsid` exists the process group is signalled as well.
 
 ## Launch safety and compatibility
 
