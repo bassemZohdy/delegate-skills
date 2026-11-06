@@ -30,8 +30,8 @@ Before proceeding: if `workflow.md` does not exist in this same folder, the skil
 ### Detect
 
 ```bash
-if command -v oh-my-opencode &>/dev/null; then
-  echo "omo"
+if command -v oh-my-opencode &>/dev/null || command -v oh-my-openagent &>/dev/null; then
+  echo "omo"      # opencode with the oh-my-opencode plugin (both bins come from one package)
 elif command -v opencode &>/dev/null; then
   echo "opencode"
 else
@@ -56,6 +56,15 @@ opencode run --help 2>&1 | grep -E "variant|effort|thinking"
 # 'effort' not present → never use it
 ```
 `--file` is an array option (`[array]` in the help): it consumes following non-flag words, so never put the message or another positional after it.
+
+**oh-my-opencode's own runner has different flags** (verified against oh-my-openagent 5.1.62, `docs/reference/cli.md`):
+```bash
+oh-my-opencode run --help 2>&1 | grep -E "directory|model|session-id"
+# -d, --directory <path>          → working directory (NOT --dir)
+# -m, --model <provider/model>    → model override
+# --session-id <id>               → resume an existing session (there is no --continue)
+# no --file, no --yes, no approval-bypass flag: permissions come from opencode's own config
+```
 
 **Auto-approval flag** — disabled by default; explicit opt-in only. The flag name has changed across opencode versions (`--dangerously-skip-permissions` was replaced by `--auto` as of v1.17.x) — never hardcode one, detect it. Check the deprecated flag first so `--auto` wins when a version supports both:
 ```bash
@@ -132,48 +141,34 @@ nohup bash -c 'sleep "$1"; kill -TERM "$2" 2>/dev/null; sleep 30; kill -KILL "$2
 echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```
 
-**`omo` — oh-my-opencode:** the launcher targets the `opencode` binary only. oh-my-opencode is installed as an opencode plugin, so `bash "$DELEGATE_SH" opencode ...` normally runs with it loaded; use the manual block below only when you specifically need the `oh-my-opencode run` entry point.
+**`omo` — oh-my-opencode / oh-my-openagent:** an opencode plugin with its own non-interactive runner. `bash "$DELEGATE_SH" opencode ...` already runs with the plugin loaded (opencode loads installed plugins), so the launcher stays the preferred path, and the worktree branch is `opencode/TASK-N` either way — `omo` is only the `agent:` label in TODO.md. Use the manual block below only when you specifically want the `oh-my-opencode run` entry point (it exits only once the session's todos and sub-sessions are finished). Its flags are listed under "Validate Model and Flags" above: `--directory`, not `--dir`; no `--file`, so the handoff is referenced by absolute path in the message; no `--yes` or approval-bypass flag — permissions come from opencode's own config.
 ```bash
-# Capture PROJECT_ROOT first — both branches below either point omo's --dir at the
-# worktree or cd into it, so any relative path (e.g. --file) must be made absolute
-# against PROJECT_ROOT or it will fail to resolve once the cwd changes.
+# Capture PROJECT_ROOT first — the block cds into the worktree, so every
+# .delegate/tasks/ path must be absolute or it resolves inside the worktree.
 PROJECT_ROOT="$(pwd)"
-WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
+WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"     # branch opencode/TASK-N
 if [ ! -d "$WORK_DIR" ]; then
   [ "${DELEGATE_ALLOW_UNISOLATED:-0}" = 1 ] || { echo "ERROR: worktree missing; refusing unisolated launch" >&2; exit 1; }
   echo "WARN: explicitly running without code isolation" >&2
   WORK_DIR="$PROJECT_ROOT"
 fi
 
+TASK_FILE="$PROJECT_ROOT/.delegate/tasks/TASK-N.md"
 TIMEOUT_SECS=<seconds from timeout tier>
 
-# Help-check both flags — omo may support --file and/or --dir (varies by version).
-# If --dir is unsupported, fall back to cd so the agent still runs in the worktree.
-# Build args as an ARRAY — a flat string like "--file $PROJECT_ROOT/..." word-splits
-# on spaces in the path. ${arr[@]+...} keeps an empty array safe under `set -u`.
+# Help-check the directory flag (it is --directory; older builds may lack it —
+# the cd below keeps the agent in the worktree regardless). Build args as an
+# ARRAY so a path with spaces survives; ${arr[@]+...} keeps an empty array safe
+# under `set -u`. Add -m "<provider/model>" only if the user asked for a model.
 OMO_HELP=$(oh-my-opencode run --help 2>&1)
-OMO_ARGS=() ; OMO_HAS_DIR=""
-UNSAFE_ARGS=()
-[ "${DELEGATE_ALLOW_UNSAFE_FLAGS:-0}" = 1 ] && UNSAFE_ARGS+=(--yes)
-echo "$OMO_HELP" | grep -q "\-\-file" && OMO_ARGS+=(--file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md")
-echo "$OMO_HELP" | grep -q "\-\-dir" && { OMO_HAS_DIR=1; OMO_ARGS+=(--dir "$WORK_DIR"); }
+OMO_ARGS=()
+echo "$OMO_HELP" | grep -q -- "--directory" && OMO_ARGS+=(--directory "$WORK_DIR")
 
-if [ -n "$OMO_HAS_DIR" ]; then
-  # --dir supported: pass it directly (no cd needed)
-  nohup oh-my-opencode run \
-    "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
-    ${OMO_ARGS[@]+"${OMO_ARGS[@]}"} \
-    ${UNSAFE_ARGS[@]+"${UNSAFE_ARGS[@]}"} \
-    > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
-else
-  # No --dir flag: cd into the worktree so isolation still holds.
-  cd "$WORK_DIR" || exit 1
-  nohup oh-my-opencode run \
-    "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
-    ${OMO_ARGS[@]+"${OMO_ARGS[@]}"} \
-    ${UNSAFE_ARGS[@]+"${UNSAFE_ARGS[@]}"} \
-    > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
-fi
+cd "$WORK_DIR" || exit 1    # the process cwd is what contains relative writes
+nohup oh-my-opencode run \
+  "Read $TASK_FILE and execute the task described in it. Follow all instructions exactly. All changes must stay in $WORK_DIR." \
+  ${OMO_ARGS[@]+"${OMO_ARGS[@]}"} \
+  > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 
 TASK_PID=$!
 echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
@@ -225,5 +220,9 @@ echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
 nohup bash -c 'sleep "$1"; kill -TERM "$2" 2>/dev/null; sleep 30; kill -KILL "$2" 2>/dev/null' \
   _ "$TIMEOUT_SECS" "$TASK_PID" > /dev/null 2>&1 &
 echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
-# omo: the same, with `oh-my-opencode run`, "${OMO_ARGS[@]}" and --continue (cd into $WORK_DIR first if it has no --dir).
+# omo: `oh-my-opencode run` has no --continue. Prefer the launcher's resume
+# (`bash "$DELEGATE_SH" opencode TASK-N "$TIMEOUT_SECS" --continue` — the plugin
+# loads in opencode's resumed session). Manually: re-run the omo block with the
+# message "Continue the task from where you left off. The handoff is at $TASK_FILE."
+# and add `--session-id <id>` if the previous log printed one.
 ```

@@ -66,7 +66,9 @@ often. Your job is to find where this repo has fallen behind and report it.
 
 ## What to do
 
-For each runtime in the manifest, and for the `spec` entry:
+For each runtime in the manifest, each `manual_only` entry (compare its
+`flags` with the manual launch block in the `skill` it names — there is no
+launcher code for these), and for the `spec` entry:
 
 1. **Validate sources.** Fetch every `docs` and `changelog` URL. Record any that
    404, redirect to a different site, or no longer describe the CLI. Find the

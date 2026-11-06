@@ -155,3 +155,19 @@ runtimes:
           - [--model]
           - [--add-dir]
           - [--dangerously-skip-permissions]
+
+# Tools with a manual launch block only (no launcher runtime, so no `help`
+# contract and no weekly npm install). The AI watch still validates their
+# sources against the named skill's manual block.
+manual_only:
+  oh-my-opencode:
+    binary: oh-my-opencode        # same package also installs oh-my-openagent
+    install: npm install -g oh-my-opencode
+    skill: skills/delegate-to-opencode/SKILL.md
+    docs:
+      - https://github.com/code-yeongyu/oh-my-openagent/blob/main/docs/reference/cli.md
+    changelog:
+      - https://github.com/code-yeongyu/oh-my-openagent/blob/main/CHANGELOG.md
+    verified: "5.1.62"
+    latest_seen: "5.1.62"
+    flags: [--directory, --model, --session-id]   # `run` has no --file/--continue/--yes

@@ -52,11 +52,13 @@ bash helpers/scripts/sync-skills.sh --check
 ```
 
 ## [TASK-14] `omo` branch label makes the launcher refuse to launch (worktree/branch mismatch)
-- status: pending
+- status: completed
 - priority: P1
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: (cleared)
+- reviewed: 2026-11-06T11:45:00Z
+- outcome: branch is always `<launcher-runtime>/TASK-N`; `omo` is only the TODO.md `agent:` label (workflow.md Step 1/2, delegate-to-any, delegate-to-opencode); structure test forbids `omo/TASK` in distributed files
+- agent: claude-code / claude-fable-5-1
+- started: 2026-11-06T11:32:00Z
 - timeout: 600
 - worktree: none
 - branch: none
@@ -75,11 +77,11 @@ bash helpers/scripts/sync-skills.sh --check
 The branch name is always `<launcher-runtime>/TASK-N`; `omo` survives only as the `agent:` label in TODO.md; the three files agree.
 
 ### Sub-tasks
-- [ ] workflow.md Step 2: drop `omo` from the `RUNTIME=` list and state that the branch must use the binary name passed to the launcher
-- [ ] delegate-to-any: "label the task `omo`" applies to the `agent:` field only; branch stays `opencode/TASK-N`
-- [ ] delegate-to-opencode: same note next to the `omo` manual block; the manual omo block must create/use `opencode/TASK-N`
-- [ ] Structure test: no distributed file may say the branch is `omo/TASK-N`
-- [ ] Re-sync (`bash helpers/scripts/sync-skills.sh`)
+- [x] workflow.md Step 2: drop `omo` from the `RUNTIME=` list and state that the branch must use the binary name passed to the launcher
+- [x] delegate-to-any: "label the task `omo`" applies to the `agent:` field only; branch stays `opencode/TASK-N`
+- [x] delegate-to-opencode: same note next to the `omo` manual block; the manual omo block must create/use `opencode/TASK-N`
+- [x] Structure test: no distributed file may say the branch is `omo/TASK-N`
+- [x] Re-sync (`bash helpers/scripts/sync-skills.sh`)
 
 ### Verification
 ```bash
@@ -342,11 +344,13 @@ grep -n 'NO_APPROVALS\|never asks for approval' helpers/scripts/delegate.sh
 ```
 
 ## [TASK-22] Verify the oh-my-opencode CLI surface or drop the `omo` manual path
-- status: pending
+- status: completed
 - priority: P2
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: (cleared)
+- reviewed: 2026-11-06T11:45:00Z
+- outcome: (a) — `oh-my-opencode run <message>` exists (oh-my-openagent 5.1.62 docs/reference/cli.md, read via gh api; npx execution was blocked): flags are -d/--directory, -m/--model, --session-id; no --file/--dir/--continue/--yes. Manual block rewritten to those flags (absolute handoff path in the message, cd + --directory), retry note via launcher --continue, structure test pins the real flags, manifest `manual_only:` entry added for the AI watch
+- agent: claude-code / claude-fable-5-1
+- started: 2026-11-06T11:32:00Z
 - timeout: 600
 - worktree: none
 - branch: none
@@ -365,10 +369,10 @@ grep -n 'NO_APPROVALS\|never asks for approval' helpers/scripts/delegate.sh
 `oh-my-opencode --help` / `oh-my-opencode run --help` output captured and either (a) the block corrected to the real flags with a help-detected launch, or (b) the block and the `omo` priority row removed, keeping only "if the plugin is installed, `opencode` loads it".
 
 ### Sub-tasks
-- [ ] Run `npx -y oh-my-opencode@latest --help` (and `run --help`) in a throwaway dir; record the output in the task
-- [ ] Apply (a) or (b) to delegate-to-opencode, delegate-to-any (detect list, priority table, missing_runtime JSON), AGENTS.md, docs/usage.md:30
-- [ ] Update the structure test's omo regression check accordingly
-- [ ] Add `oh-my-opencode` to `.github/upstream-sources.yml` only if (a)
+- [x] Run `npx -y oh-my-opencode@latest --help` (and `run --help`) in a throwaway dir; record the output in the task — execution was blocked in-session; the upstream `docs/reference/cli.md` (5.1.62) was read instead and is quoted in delegate-to-opencode
+- [x] Apply (a) or (b) to delegate-to-opencode, delegate-to-any (detect list, priority table, missing_runtime JSON), AGENTS.md, docs/usage.md:30
+- [x] Update the structure test's omo regression check accordingly
+- [x] Add `oh-my-opencode` to `.github/upstream-sources.yml` only if (a)
 
 ### Verification
 ```bash

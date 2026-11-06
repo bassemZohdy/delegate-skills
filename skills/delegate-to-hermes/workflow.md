@@ -105,7 +105,7 @@ TASK_N=$(( ${LAST_N:-0} + 1 ))
 ## [TASK-N] <short title>
 - status: in_progress
 - owner: <agent>/<ISO-timestamp>
-- agent: <runtime> / <resolved model ID, or "default" if none specified>
+- agent: <runtime> / <resolved model ID, or "default" if none specified>   # "omo" for oh-my-opencode goes here, never in the branch name
 - started: <ISO-8601>
 - timeout: <seconds — see "Timeout tiers" below>
 - worktree: .delegate/worktrees/TASK-N   # or "none"
@@ -155,9 +155,11 @@ This matters for two reasons: (1) it keeps the working tree clean going into Ste
 Parallel agents writing to the same working tree corrupt each other. Create an isolated checkout, branched from the commit just made in Step 1:
 
 ```bash
-RUNTIME=<opencode|omo|pi|mimo|hermes|kimi|codex|agy — whichever runtime will run the task>
+RUNTIME=<opencode|pi|mimo|hermes|kimi|codex|agy — the binary name the launcher runs>
 git worktree add .delegate/worktrees/TASK-$TASK_N -b $RUNTIME/TASK-$TASK_N
 ```
+
+The branch is always named after the launcher runtime. An oh-my-opencode (`omo`) task runs through the `opencode` binary, so its branch is `opencode/TASK-N` — `omo` belongs only in the TODO.md `agent:` field. The launcher refuses to use a worktree whose branch is not exactly `<runtime>/TASK-N`.
 
 (The launcher also creates this worktree itself if it is missing — pruning a registration left behind by a worktree directory that was deleted by hand — and refuses to reuse a directory that is not a worktree of this repository on exactly that branch — so a stale or foreign directory at that path is an error, never silently adopted.)
 

@@ -678,17 +678,34 @@ done
 echo ""
 echo "  ─── semantic regression checks ───"
 
-# Regression: omo (oh-my-opencode) launch block must set the working directory.
-# Bug #1 — omo ran in the project root, ignoring the worktree, because neither
-# --dir nor a cd fallback was present. The canonical omo launch lives in
-# delegate-to-opencode (delegate-to-any references it rather than duplicating),
-# so we assert against the canonical location.
+# Regression: the omo (oh-my-opencode) manual block must set the working
+# directory and may only use flags the real CLI has. Bug #1 — omo ran in the
+# project root because neither a directory flag nor a cd was present; later
+# the block carried flags that do not exist at all (--dir, --file, --yes).
+# Verified against oh-my-openagent 5.1.62 docs/reference/cli.md: `run` takes
+# -d/--directory, -m/--model and --session-id; no --file/--continue/--yes.
+# The canonical omo launch lives in delegate-to-opencode (delegate-to-any
+# references it rather than duplicating), so we assert against that file.
 F="$PROJECT_ROOT/skills/delegate-to-opencode/SKILL.md"
-if awk '/oh-my-opencode run/{flag=1} flag{print} /--yes \\/{if(flag)exit}' "$F" \
-     | grep -qE -- '--dir|\bcd "\$WORK_DIR"'; then
-  pass "skills/delegate-to-opencode/SKILL.md omo block sets working dir (--dir or cd)"
+omo_code=$(awk '/^\*\*`omo`/{sec=1} /^\*\*`none`/{sec=0} sec && /^```bash/{code=1; next} sec && /^```/{code=0} sec && code' "$F")
+if echo "$omo_code" | grep -q -- '--directory "\$WORK_DIR"' && echo "$omo_code" | grep -q 'cd "\$WORK_DIR"'; then
+  pass "skills/delegate-to-opencode/SKILL.md omo block sets working dir (--directory + cd)"
 else
   fail "skills/delegate-to-opencode/SKILL.md omo block does NOT set working dir (regression of bug #1)"
+fi
+if echo "$omo_code" | grep -qE -- '(^|[[:space:]])(--yes|--file|--dir|--continue)([[:space:]]|$)'; then
+  fail "skills/delegate-to-opencode/SKILL.md omo block uses flags 'oh-my-opencode run' does not have (--yes/--file/--dir/--continue)"
+else
+  pass "skills/delegate-to-opencode/SKILL.md omo block uses only real oh-my-opencode flags"
+fi
+
+# The branch name is always the launcher runtime's: an omo task runs through
+# the opencode binary and the launcher verifies branch opencode/TASK-N, so no
+# distributed file may tell the model to create omo/TASK-N.
+if grep -rqE 'omo/TASK' "$PROJECT_ROOT/skills" "$PROJECT_ROOT/helpers" "$PROJECT_ROOT/docs" "$PROJECT_ROOT/README.md"; then
+  fail "a distributed file names the worktree branch omo/TASK-N (the launcher requires opencode/TASK-N)"
+else
+  pass "no distributed file names the worktree branch omo/TASK-N"
 fi
 
 # Regression: cd-based runtimes in delegate.sh must capture the real nohup PID,

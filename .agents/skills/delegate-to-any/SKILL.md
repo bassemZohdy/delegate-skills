@@ -32,7 +32,7 @@ Before proceeding: if `workflow.md` does not exist in this same folder, the skil
 Run a single scan across all supported binaries:
 
 ```bash
-for bin in oh-my-opencode opencode pi mimo hermes kimi codex agy; do
+for bin in oh-my-opencode oh-my-openagent opencode pi mimo hermes kimi codex agy; do
   command -v "$bin" &>/dev/null && echo "$bin"
 done
 ```
@@ -43,7 +43,7 @@ This prints every binary that is on PATH, in priority order.
 
 | Priority | Binary | Notes |
 |----------|--------|-------|
-| 1 | `oh-my-opencode` | Preferred opencode variant — use `omo` launch path |
+| 1 | `oh-my-opencode` / `oh-my-openagent` | opencode with the oh-my-opencode plugin — label `omo`, launched through `opencode` |
 | 2 | `opencode` | Standard opencode |
 | 3 | `pi` | |
 | 4 | `mimo` | |
@@ -60,7 +60,7 @@ Take the **first hit** from the list above. Tell the user which runtime was sele
 {
   "error": "missing_runtime",
   "message": "No supported agent CLI found on PATH.",
-  "checked": ["oh-my-opencode", "opencode", "pi", "mimo", "hermes", "kimi", "codex", "agy"],
+  "checked": ["oh-my-opencode", "oh-my-openagent", "opencode", "pi", "mimo", "hermes", "kimi", "codex", "agy"],
   "install_options": [
     "opencode  →  npm install -g opencode-ai",
     "pi        →  bun install -g @earendil-works/pi-coding-agent",
@@ -118,7 +118,7 @@ Use the launch pattern for the chosen runtime. Two equivalent paths:
    ```bash
    bash "$DELEGATE_SH" <selected-runtime> TASK-N "$TIMEOUT_SECS"   # append --model "<id>" only if requested
    ```
-   Where `<selected-runtime>` is the binary chosen above (`opencode`, `pi`, `mimo`, `hermes`, `kimi`, `codex`, or `agy`). For `oh-my-opencode`: it is installed as an opencode plugin, so when `opencode` is also on PATH, launch `opencode` through the launcher (the plugin still loads) and label the task `omo`; only if you need the `oh-my-opencode run` entry point itself, use path 2.
+   Where `<selected-runtime>` is the binary chosen above (`opencode`, `pi`, `mimo`, `hermes`, `kimi`, `codex`, or `agy`). For `oh-my-opencode` / `oh-my-openagent`: it is an opencode plugin, so launch `opencode` through the launcher (the plugin still loads) and record `agent: omo` in TODO.md — the worktree branch stays `opencode/TASK-N`, which is what the launcher verifies; only if you need the `oh-my-opencode run` entry point itself (it waits for the session's todos and sub-sessions before exiting), use path 2.
 
 2. **Direct launch** — copy the exact Launch block from the chosen runtime's own skill, if it is installed alongside this one (sibling folders under the same skills root): `../delegate-to-opencode/SKILL.md` (opencode/omo), `../delegate-to-pi/SKILL.md`, `../delegate-to-mimo/SKILL.md`, `../delegate-to-hermes/SKILL.md`, `../delegate-to-kimi/SKILL.md`, `../delegate-to-codex/SKILL.md`, `../delegate-to-agy/SKILL.md`. A single-skill install may not have them — then path 1 is the only supported launch.
 
@@ -158,7 +158,7 @@ nohup bash -c 'sleep "$1"; kill -TERM "$2" 2>/dev/null; sleep 30; kill -KILL "$2
 echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```
 
-Use the runtime label in TODO.md and on the worktree branch name: `omo` for oh-my-opencode, otherwise the binary name (`opencode`, `pi`, `mimo`, `hermes`, `kimi`, `codex`, `agy`).
+Name the worktree branch after the binary that runs the task (`opencode/TASK-N`, `pi/TASK-N`, …) — never after the `omo` label: an oh-my-opencode task runs through `opencode`, and the launcher refuses a worktree on any other branch. `omo` goes only in the TODO.md `agent:` field.
 
 Tell the user: selected runtime, task ID, working directory, log path, timeout deadline.
 
