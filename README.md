@@ -140,8 +140,7 @@ Each task gets its own git branch (`<runtime>/TASK-N`) and a matching worktree a
 
 ```bash
 git merge opencode/TASK-1
-git worktree remove .delegate/worktrees/TASK-1
-git branch -d opencode/TASK-1
+bash "$DELEGATE_SH" cleanup TASK-1     # removes the worktree and branch; refuses if anything is unmerged
 ```
 
 ### Handoff documents

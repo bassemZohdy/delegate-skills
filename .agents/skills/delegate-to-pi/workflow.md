@@ -11,12 +11,21 @@ The user's task description is available as `$ARGUMENTS` — it is substituted i
 Resolve it once, from the project root, before Step −1:
 
 ```bash
-# A project-local copy wins (lets a project pin its own version); otherwise use
-# the copy bundled with this skill. Replace <skill-dir> with the absolute path
-# of the folder this workflow.md was read from.
-if [ -f scripts/delegate.sh ]; then DELEGATE_SH="scripts/delegate.sh"
-elif [ -f "<skill-dir>/scripts/delegate.sh" ]; then DELEGATE_SH="<skill-dir>/scripts/delegate.sh"
-else DELEGATE_SH=""; fi
+# A project-local scripts/delegate.sh wins only if it is at least as new as the
+# bundled copy (compared via `delegate.sh version`; a pre-1.4 copy has no such
+# subcommand and counts as oldest) — a stale pinned launcher must never override
+# the one these instructions were written for. Replace <skill-dir> with the
+# absolute path of the folder this workflow.md was read from.
+_dv() { bash "$1" version 2>/dev/null | awk -F. 'NR==1 && NF==3 { printf "%d%03d%03d", $1, $2, $3; f=1 } END { if (!f) printf "0" }'; }
+BUNDLED="<skill-dir>/scripts/delegate.sh"; [ -f "$BUNDLED" ] || BUNDLED=""
+DELEGATE_SH="$BUNDLED"
+if [ -f scripts/delegate.sh ]; then
+  if [ -z "$BUNDLED" ] || [ "$(_dv scripts/delegate.sh)" -ge "$(_dv "$BUNDLED")" ]; then
+    DELEGATE_SH="scripts/delegate.sh"
+  else
+    echo "WARN: scripts/delegate.sh in this project is older than the bundled launcher; using the bundled one." >&2
+  fi
+fi
 echo "DELEGATE_SH=${DELEGATE_SH:-<none>}"
 ```
 
@@ -362,9 +371,9 @@ kill "$WATCHDOG" 2>/dev/null
 Report to user: what was built, where it lives, any caveats, and the commands to bring the work into the current branch when ready:
 ```bash
 git merge <runtime>/TASK-N
-git worktree remove .delegate/worktrees/TASK-N
-git branch -d <runtime>/TASK-N
+bash "$DELEGATE_SH" cleanup TASK-N     # removes the worktree and branch; refuses while the agent runs or while anything is unmerged/uncommitted (--force overrides)
 ```
+(Without the launcher: `git worktree remove .delegate/worktrees/TASK-N && git branch -d <runtime>/TASK-N`.)
 
 **If verification fails:**
 - Log what specifically failed.

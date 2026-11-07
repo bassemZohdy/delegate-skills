@@ -863,6 +863,35 @@ else
   pass "delegate-to-any has no broken sibling-skill links"
 fi
 
+# ─── Launcher version == skill version ────────────────────────────────────────
+# The workflow compares a project-pinned launcher with the bundled one via
+# `delegate.sh version`; that only means something if the number tracks the
+# skills it ships with.
+launcher_version=$(sed -n 's/^DELEGATE_VERSION="\([0-9.]*\)"$/\1/p' "$DELEGATE_SH")
+for f in "$PROJECT_ROOT"/skills/delegate-to-*/SKILL.md "$PROJECT_ROOT/helpers/hermes/delegate-tasks/SKILL.md"; do
+  v=$(sed -n 's/^[[:space:]]*version:[[:space:]]*"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}[[:space:]]*$/\1/p' "$f" | head -1)
+  rel=${f#"$PROJECT_ROOT"/}
+  [ -n "$launcher_version" ] && [ "$v" = "$launcher_version" ] \
+    && pass "$rel version $v matches DELEGATE_VERSION" \
+    || fail "$rel version '$v' differs from DELEGATE_VERSION '$launcher_version' in helpers/scripts/delegate.sh"
+done
+
+# ─── Hermes helper / generic prompt: full ledger fields, no first-launch --continue ──
+for f in helpers/hermes/delegate-tasks/SKILL.md helpers/adapters/generic-prompt.md; do
+  missing=""
+  for field in base_sha dirty_tree output_ref retries depends_on blocked_by "Active Form"; do
+    grep -q "$field" "$PROJECT_ROOT/$f" || missing="$missing $field"
+  done
+  [ -z "$missing" ] \
+    && pass "$f ledger/handoff templates carry the full workflow field set" \
+    || fail "$f templates are missing:$missing"
+  if grep -qi "so sessions don't collide" "$PROJECT_ROOT/$f"; then
+    fail "$f suggests --continue for a first launch (it resumes the previous session; retries only)"
+  else
+    pass "$f does not suggest --continue for a first launch"
+  fi
+done
+
 # ─── Standalone summary ───────────────────────────────────────────────────────
 
 if [ "${_standalone:-false}" = "true" ]; then

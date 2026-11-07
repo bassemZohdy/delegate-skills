@@ -1416,6 +1416,104 @@ test_next_id_reclaims_stale_lock() {
   [ ! -d "$SANDBOX/.delegate/todo.lock" ]
 }
 
+# ─── Test 28: cleanup — post-merge teardown ──────────────────────────────
+
+test_cleanup() {
+  local SANDBOX out wt="" code
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+  mkdir -p "$SANDBOX/bin" "$SANDBOX/mockout"
+  init_git_repo "$SANDBOX"
+  local t
+  for t in 55 56 58; do create_handoff "$SANDBOX" "TASK-$t"; done
+  cp "$FIXTURES/opencode" "$SANDBOX/bin/"
+  chmod +x "$SANDBOX/bin/opencode"
+  cd "$SANDBOX"
+
+  # 1. Refuses while the agent is running, and removes nothing.
+  PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-55 60 < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  wait_for_mock_file "$SANDBOX/mockout/opencode.pid" || return 1
+  code=0; bash "$DELEGATE_SH" cleanup TASK-55 > "$SANDBOX/out" 2>&1 || code=$?
+  [ "$code" = 1 ] && grep -q "still running" "$SANDBOX/out" || { bash "$DELEGATE_SH" stop TASK-55 >/dev/null; return 1; }
+  [ -d "$SANDBOX/.delegate/worktrees/TASK-55" ] || return 1
+  bash "$DELEGATE_SH" stop TASK-55 | grep -q "^STATE=STOPPED$" || return 1
+
+  # 2. Merged (no new commits) -> worktree and branch removed, logs kept.
+  out=$(bash "$DELEGATE_SH" cleanup TASK-55) || return 1
+  echo "$out" | grep -q "^STATE=CLEANED$" && echo "$out" | grep -q "^BRANCH=opencode/TASK-55$" || return 1
+  [ ! -d "$SANDBOX/.delegate/worktrees/TASK-55" ] || return 1
+  [ -z "$(git branch --list 'opencode/TASK-55')" ] || return 1
+  [ -f "$SANDBOX/.delegate/tasks/TASK-55.log" ] || return 1
+  bash "$DELEGATE_SH" cleanup TASK-55 | grep -q "^STATE=NOTHING_TO_CLEAN$" || return 1
+
+  # 3. Unmerged commits -> refused with nothing removed; fine after the user merges.
+  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-56 60 < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  wait_for_mock_file "$SANDBOX/.delegate/tasks/TASK-56.exitcode" || return 1
+  wt="$SANDBOX/.delegate/worktrees/TASK-56"
+  git -C "$wt" commit -q --allow-empty -m "agent work" || return 1
+  code=0; bash "$DELEGATE_SH" cleanup TASK-56 > "$SANDBOX/out" 2>&1 || code=$?
+  [ "$code" = 1 ] && grep -q "not merged" "$SANDBOX/out" || return 1
+  [ -d "$wt" ] && [ -n "$(git branch --list 'opencode/TASK-56')" ] || return 1
+  git merge -q opencode/TASK-56 || return 1
+  bash "$DELEGATE_SH" cleanup TASK-56 | grep -q "^STATE=CLEANED$" || return 1
+
+  # 4. --force discards unmerged work and uncommitted changes.
+  PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_OUT_DIR="$SANDBOX/mockout" \
+    bash "$DELEGATE_SH" opencode TASK-58 60 < /dev/null > /dev/null 2>&1 || return 1
+  snapshot_watchdog_children "$SANDBOX"
+  wait_for_mock_file "$SANDBOX/.delegate/tasks/TASK-58.exitcode" || return 1
+  wt="$SANDBOX/.delegate/worktrees/TASK-58"
+  git -C "$wt" commit -q --allow-empty -m "unmerged" || return 1
+  echo scratch > "$wt/untracked.txt"
+  code=0; bash "$DELEGATE_SH" cleanup TASK-58 > /dev/null 2>&1 || code=$?
+  [ "$code" = 1 ] || return 1
+  bash "$DELEGATE_SH" cleanup TASK-58 --force | grep -q "^STATE=CLEANED$" || return 1
+  [ ! -d "$wt" ] && [ -z "$(git branch --list 'opencode/TASK-58')" ]
+}
+
+# ─── Test 29: version, --help, and the workflow's launcher resolver ──────
+
+test_version_and_resolver() {
+  local SANDBOX v code skill_dir snippet
+  SANDBOX=$(mktemp -d)
+  trap "cleanup_sandbox '$SANDBOX'" RETURN
+  cd "$SANDBOX"
+  v=$(bash "$DELEGATE_SH" version) || return 1
+  [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  code=0; bash "$DELEGATE_SH" --help > /dev/null 2>&1 || code=$?
+  [ "$code" = 0 ] || return 1
+  code=0; bash "$DELEGATE_SH" > /dev/null 2>&1 || code=$?
+  [ "$code" = 1 ] || return 1
+
+  # Run the workflow's own resolver snippet against fake skill/project layouts.
+  skill_dir="$SANDBOX/skill"
+  mkdir -p "$skill_dir/scripts" "$SANDBOX/proj/scripts"
+  cp "$DELEGATE_SH" "$skill_dir/scripts/delegate.sh"
+  snippet=$(awk '/^Resolve it once/{s=1} s&&/^```bash/{c=1;next} s&&c&&/^```/{exit} s&&c' "$PROJECT_ROOT/skills/shared/workflow.md" | sed "s|<skill-dir>|$skill_dir|g")
+  [ -n "$snippet" ] || return 1
+  cd "$SANDBOX/proj"
+  resolve() { bash -c "$snippet" 2>"$SANDBOX/resolver.err" | sed -n 's/^DELEGATE_SH=//p'; }
+
+  # no project copy -> bundled
+  [ "$(resolve)" = "$skill_dir/scripts/delegate.sh" ] || return 1
+  # pre-1.4 project copy (no `version` subcommand) -> bundled, with a warning
+  printf '#!/usr/bin/env bash\nexit 1\n' > scripts/delegate.sh
+  [ "$(resolve)" = "$skill_dir/scripts/delegate.sh" ] && grep -q "older than the bundled" "$SANDBOX/resolver.err" || return 1
+  # same-version project copy -> the project's own copy wins
+  cp "$DELEGATE_SH" scripts/delegate.sh
+  [ "$(resolve)" = "scripts/delegate.sh" ] || return 1
+  # newer project copy -> the project's own copy wins
+  printf '#!/usr/bin/env bash\n[ "${1:-}" = version ] && echo 9.9.9\n' > scripts/delegate.sh
+  [ "$(resolve)" = "scripts/delegate.sh" ] || return 1
+  # project copy but no bundled one at all -> the project's copy
+  rm -rf "$skill_dir/scripts"
+  [ "$(resolve)" = "scripts/delegate.sh" ]
+}
+
 # ─── Main: Run all tests ──────────────────────────────────────────────────────
 
 test_missing_handoff && pass "Missing handoff document → exit 1 with correct error" || fail "Missing handoff document → exit 1 with correct error"
@@ -1455,6 +1553,8 @@ test_relaunch_after_worktree_deleted && pass "Relaunch after the worktree dir wa
 for mode in worktree unisolated; do
   test_status_stalled "$mode" && pass "status reports STALLED for a silent agent ($mode)" || fail "status reports STALLED for a silent agent ($mode)"
 done
+test_cleanup && pass "cleanup: refuses while running / unmerged, removes worktree+branch, keeps logs" || fail "cleanup: refuses while running / unmerged, removes worktree+branch, keeps logs"
+test_version_and_resolver && pass "version, --help exit codes, and the workflow launcher resolver prefer the newer copy" || fail "version, --help exit codes, and the workflow launcher resolver prefer the newer copy"
 test_next_id_reclaims_stale_lock && pass "next-id reclaims a stale lock via portable mtime" || fail "next-id reclaims a stale lock via portable mtime"
 
 # ─── Standalone summary ───────────────────────────────────────────────────

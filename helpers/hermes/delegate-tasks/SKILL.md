@@ -85,7 +85,7 @@ Use `TASK-<N>` (e.g. `TASK-1`) throughout. Taking the MAX across both files matt
 
 Append to `TODO.md` (create it if absent):
 ```
-terminal(command="cat >> TODO.md << 'ENTRY'\n\n## [TASK-<N>] <short title>\n- status: in_progress\n- owner: <runtime>/<timestamp>\n- agent: <runtime>\n- started: <ISO-8601>\n- timeout: <seconds>\n- worktree: .delegate/worktrees/TASK-<N>\n- branch: <runtime>/TASK-<N>\n- handoff: .delegate/tasks/TASK-<N>.md\n\n### Sub-tasks\n- [ ] <sub-task 1>\n\n### Verification\n<done criteria>\nENTRY", workdir="<project>")
+terminal(command="cat >> TODO.md << 'ENTRY'\n\n## [TASK-<N>] <short title>\n- status: in_progress\n- owner: <runtime>/<timestamp>\n- agent: <runtime> / <model or default>\n- started: <ISO-8601>\n- timeout: <seconds>\n- worktree: .delegate/worktrees/TASK-<N>\n- branch: <runtime>/TASK-<N>\n- base_sha: <sha from Step 0>\n- dirty_tree: false\n- handoff: .delegate/tasks/TASK-<N>.md\n- output_ref: <where the agent writes its result>\n- retries: 0\n- depends_on: []\n- blocked_by: []\n\n### Active Form\n<what mid-task progress looks like>\n\n### Sub-tasks\n- [ ] <sub-task 1>\n\n### Verification\n<done criteria>\nENTRY", workdir="<project>")
 ```
 
 Commit it now, before creating the worktree:
@@ -110,7 +110,7 @@ Create `.delegate/tasks/TASK-<N>.md`. The agent has no conversation history — 
 
 ```
 terminal(command="mkdir -p .delegate/tasks", workdir="<project>")
-terminal(command="cat > .delegate/tasks/TASK-<N>.md << 'HANDOFF'\n# Task Handoff — TASK-<N>\n\n## Task Description\n<what to accomplish>\n\n## Target Paths\n<files and directories>\n\n## Worktree Path\n.delegate/worktrees/TASK-<N>\n\n## Sub-tasks\n- [ ] <sub-task>\n\n## Verification Expectations\n<commands to run, files to verify>\n\n## Git State\n- base_branch: <branch>\n- base_sha: <sha>\n- agent_branch: <runtime>/TASK-<N>\nHANDOFF", workdir="<project>")
+terminal(command="cat > .delegate/tasks/TASK-<N>.md << 'HANDOFF'\n# Task Handoff — TASK-<N>\n\n## Task Description\n<what to accomplish>\n\n## Target Paths\n<files and directories>\n\n## Worktree Path\n.delegate/worktrees/TASK-<N>\n\n## Sub-tasks\n- [ ] <sub-task>\n\n## Active Form\n<what mid-task progress looks like>\n\n## Verification Expectations\n<commands to run, files to verify — ideally a fenced bash block that `delegate.sh verify` can run>\n\n## Git State\n- base_branch: <branch>\n- base_sha: <sha>\n- agent_branch: <runtime>/TASK-<N>\nHANDOFF", workdir="<project>")
 ```
 
 ---
@@ -173,7 +173,7 @@ terminal(command="git add TODO.md && git commit -m 'TASK-<N>: mark completed'", 
 ```
 Committing keeps the main tree clean before the next delegation. Merging the worktree's actual code changes into the current branch is a separate, deliberate step — report the merge command to the user rather than running it automatically, since it changes their current branch:
 ```
-terminal(command="git merge <runtime>/TASK-<N> && git worktree remove .delegate/worktrees/TASK-<N> && git branch -d <runtime>/TASK-<N>", workdir="<project>")
+terminal(command="git merge <runtime>/TASK-<N> && bash $DELEGATE_SH cleanup TASK-<N>", workdir="<project>")
 ```
 
 ---
@@ -200,4 +200,4 @@ Retry counter: track in `.delegate/tasks/TASK-<N>.retries` file and in the `retr
 4. Never expand handoff markdown into a shell variable — always pass as a file path
 5. The `active_form` in the handoff tells you what mid-task progress looks like before the process exits
 6. A task is `completed` only when verification passes, not when the process exits
-7. For hermes self-delegation (hermes spawning hermes), use `--continue` in the child so sessions don't collide
+7. Hermes self-delegation (hermes launching hermes): the child runs in the worktree as its cwd, so its session is already separate from the parent's. Never pass `--continue` on a first launch — it resumes the most recent session for that directory; it is for self-healing retries only

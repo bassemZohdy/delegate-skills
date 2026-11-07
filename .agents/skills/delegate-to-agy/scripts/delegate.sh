@@ -9,6 +9,8 @@
 #   delegate.sh verify <task-id>                     Run the handoff's verification block
 #   delegate.sh reconcile                           Report stale in_progress TODO.md entries
 #   delegate.sh next-id                              Atomically allocate + reserve the next TASK-N
+#   delegate.sh cleanup <task-id> [--force]          Remove a finished task's worktree + branch
+#   delegate.sh version                              Print the launcher version
 #
 # ── Launch ───────────────────────────────────────────────────────────────────
 # Handles the mechanical parts of delegation:
@@ -79,6 +81,11 @@
 
 set -euo pipefail
 
+# Keep in step with every skill's metadata.version (a structure test enforces
+# it). The workflow compares this with a project-pinned copy's `version` so a
+# stale pinned launcher never overrides the bundled one.
+DELEGATE_VERSION="1.4.0"
+
 PROJECT_ROOT="$(pwd -P)"
 
 # ── Shared helpers ───────────────────────────────────────────────────────────
@@ -93,6 +100,8 @@ Usage:
   delegate.sh verify <task-id>                     Run the handoff's verification block
   delegate.sh reconcile                            Report stale in_progress TODO.md entries
   delegate.sh next-id                              Allocate + reserve the next TASK-N (lock-protected)
+  delegate.sh cleanup <task-id> [--force]          Remove the worktree + branch after you merged it
+  delegate.sh version                              Print the launcher version
 EOF
 }
 
@@ -1021,6 +1030,84 @@ cmd_stop() {
   echo "PID=$PID"
 }
 
+# ── Cleanup ──────────────────────────────────────────────────────────────────
+# Post-merge teardown. Refuses while the agent runs, and refuses (removing
+# nothing) while the branch has commits the current branch lacks or the
+# worktree has uncommitted changes — unless --force. Logs and state files under
+# .delegate/tasks/ are kept for the record. Merging stays the user's call.
+
+cmd_cleanup() {
+  local TASK_ID="" FORCE=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+      --force) FORCE=1 ;;
+      *) if [ -z "$TASK_ID" ]; then TASK_ID="$arg"
+         else echo "ERROR: unexpected argument: $arg" >&2; return 1; fi ;;
+    esac
+  done
+  [ -n "$TASK_ID" ] || { usage; return 1; }
+  validate_task_id "$TASK_ID"
+  validate_delegate_paths "$TASK_ID"
+  git rev-parse --git-dir &>/dev/null || { echo "ERROR: not a git repository — nothing to clean up." >&2; return 1; }
+
+  local WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/$TASK_ID" PID BRANCH="" err
+  PID=$(cat "$PROJECT_ROOT/.delegate/tasks/$TASK_ID.pid" 2>/dev/null) || PID=""
+  if task_agent_alive "$TASK_ID" "$PID"; then
+    echo "ERROR: $TASK_ID agent (pid $PID) is still running — stop it first (delegate.sh stop $TASK_ID)." >&2
+    return 1
+  fi
+
+  if [ -d "$WORK_DIR" ]; then
+    BRANCH=$(git -C "$WORK_DIR" symbolic-ref --short HEAD 2>/dev/null) || BRANCH=""
+    [[ "$BRANCH" == */"$TASK_ID" ]] || {
+      echo "ERROR: $WORK_DIR is not on a <runtime>/$TASK_ID branch — refusing to remove it." >&2
+      return 1
+    }
+    validate_worktree "$WORK_DIR" "$BRANCH" || return 1
+  else
+    git worktree prune 2>/dev/null || true
+    local matches
+    matches=$(git for-each-ref --format='%(refname:short)' "refs/heads/*/$TASK_ID" 2>/dev/null) || matches=""
+    if [ "$(printf '%s
+' "$matches" | grep -c .)" -gt 1 ]; then
+      echo "ERROR: several branches match */$TASK_ID — remove the right one by hand: $(printf '%s' "$matches" | tr '
+' ' ')" >&2
+      return 1
+    fi
+    BRANCH="$matches"
+  fi
+  if [ ! -d "$WORK_DIR" ] && [ -z "$BRANCH" ]; then
+    echo "STATE=NOTHING_TO_CLEAN"
+    return 0
+  fi
+
+  if [ -n "$BRANCH" ] && [ "$FORCE" != 1 ] && ! git merge-base --is-ancestor "$BRANCH" HEAD 2>/dev/null; then
+    echo "ERROR: branch $BRANCH has commits that are not merged into the current branch — merge it first (git merge $BRANCH), or pass --force to discard them." >&2
+    return 1
+  fi
+  if [ -d "$WORK_DIR" ]; then
+    if [ "$FORCE" = 1 ]; then
+      err=$(git worktree remove --force "$WORK_DIR" 2>&1) || { echo "ERROR: could not remove the worktree: ${err##*$'
+'}" >&2; return 1; }
+    else
+      err=$(git worktree remove "$WORK_DIR" 2>&1) || { echo "ERROR: could not remove the worktree (uncommitted changes? use --force to discard them): ${err##*$'
+'}" >&2; return 1; }
+    fi
+  fi
+  git worktree prune 2>/dev/null || true
+  if [ -n "$BRANCH" ]; then
+    if [ "$FORCE" = 1 ]; then
+      err=$(git branch -D "$BRANCH" 2>&1) || { echo "ERROR: worktree removed but branch $BRANCH was not: ${err##*$'
+'}" >&2; return 1; }
+    else
+      err=$(git branch -d "$BRANCH" 2>&1) || { echo "ERROR: worktree removed but branch $BRANCH was not: ${err##*$'
+'}" >&2; return 1; }
+    fi
+  fi
+  echo "STATE=CLEANED"
+  echo "BRANCH=${BRANCH:-none}"
+}
+
 # ── Dispatch ─────────────────────────────────────────────────────────────────
 
 SUBCOMMAND="${1:-}"
@@ -1030,6 +1117,9 @@ case "$SUBCOMMAND" in
   reconcile) shift; cmd_reconcile "$@" ;;
   next-id)   shift; cmd_next_id "$@" ;;
   stop)      shift; cmd_stop "$@" ;;
-  ""|-h|--help) usage; exit 1 ;;
+  cleanup)   shift; cmd_cleanup "$@" ;;
+  version|--version) echo "$DELEGATE_VERSION" ;;
+  -h|--help) usage; exit 0 ;;
+  "")        usage; exit 1 ;;
   *) cmd_launch "$@" ;;
 esac

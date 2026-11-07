@@ -248,7 +248,9 @@ Nothing to install for skill users: every skill folder already contains the
 launcher at `scripts/delegate.sh`, and the workflow uses it automatically.
 
 Optionally pin a specific version per project — a project-local
-`scripts/delegate.sh` takes precedence over the bundled copy:
+`scripts/delegate.sh` takes precedence over the bundled copy **as long as it is at least as new**
+(`bash scripts/delegate.sh version`); an older pinned copy is ignored with a warning, because the skills rely on
+subcommands such as `stop`, `cleanup` and `--continue` that older launchers lack:
 
 ```bash
 mkdir -p scripts

@@ -36,12 +36,21 @@ Append to TODO.md (create if absent):
 ## [TASK-N] <short title>
 - status: in_progress
 - owner: <runtime>/<ISO-8601>
-- agent: <runtime>
+- agent: <runtime> / <model or default>
 - started: <ISO-8601>
 - timeout: <seconds>
 - worktree: .delegate/worktrees/TASK-N
 - branch: <runtime>/TASK-N
+- base_sha: <SHA from Step 0>
+- dirty_tree: false
 - handoff: .delegate/tasks/TASK-N.md
+- output_ref: <where the agent writes its result>
+- retries: 0
+- depends_on: []
+- blocked_by: []
+
+### Active Form
+<what mid-task progress looks like>
 
 ### Sub-tasks
 - [ ] <sub-task 1>
@@ -72,6 +81,9 @@ Create `.delegate/tasks/TASK-N.md` (agent's only context — 200–500 tokens):
 
 ## Sub-tasks
 - [ ] <sub-task 1>
+
+## Active Form
+<what mid-task progress looks like>
 
 ## Verification Expectations
 <exact commands to run, files to check, expected outputs>
@@ -133,8 +145,7 @@ When the agent finishes and verification passes:
 Merge command:
 ```
 git merge <runtime>/TASK-N
-git worktree remove .delegate/worktrees/TASK-N
-git branch -d <runtime>/TASK-N
+bash $DELEGATE_SH cleanup TASK-N        # or: git worktree remove .delegate/worktrees/TASK-N && git branch -d <runtime>/TASK-N
 ```
 ```
 

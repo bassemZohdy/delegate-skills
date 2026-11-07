@@ -385,11 +385,13 @@ bash helpers/scripts/sync-skills.sh --check
 ```
 
 ## [TASK-23] Add `delegate.sh cleanup TASK-N` for the post-merge teardown
-- status: pending
+- status: completed
 - priority: P3
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: (cleared)
+- reviewed: 2026-11-07T09:30:00Z
+- outcome: `delegate.sh cleanup TASK-N [--force]`: refuses while running, refuses (removing nothing) when unmerged or dirty, keeps logs; used by workflow Case 4, usage, README, Hermes helper, generic prompt; behavior test covers running/merged/unmerged/force/nothing-to-clean
+- agent: claude-code / claude-sonnet-5-5
+- started: 2026-11-07T08:40:00Z
 - timeout: 1800
 - worktree: none
 - branch: none
@@ -408,10 +410,10 @@ Completion ends with three manual commands (`git merge`, `git worktree remove`, 
 `cmd_cleanup`: refuses if `task_agent_alive`; `git worktree remove` (with `--force` only on `--force`); `git branch -d` (never `-D` unless `--force`); keeps `.delegate/tasks/TASK-N.*` logs; prints `STATE=CLEANED`; merge stays manual.
 
 ### Sub-tasks
-- [ ] Implement `cleanup <task-id> [--force]` with the same validations as `stop`
-- [ ] Behavior tests: refuses while running; clean after merge; refuses unmerged without `--force`
-- [ ] workflow.md Case 4 and docs: replace the two teardown commands with `bash "$DELEGATE_SH" cleanup TASK-N` after the user's merge
-- [ ] usage/README/AGENTS.md subcommand lists
+- [x] Implement `cleanup <task-id> [--force]` with the same validations as `stop`
+- [x] Behavior tests: refuses while running; clean after merge; refuses unmerged without `--force`
+- [x] workflow.md Case 4 and docs: replace the two teardown commands with `bash "$DELEGATE_SH" cleanup TASK-N` after the user's merge
+- [x] usage/README/AGENTS.md subcommand lists
 
 ### Verification
 ```bash
@@ -420,11 +422,13 @@ bash helpers/scripts/delegate.sh 2>&1 | grep -q cleanup
 ```
 
 ## [TASK-24] `delegate.sh version` and a launcher-compatibility check for project-local pinned copies
-- status: pending
+- status: completed
 - priority: P3
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: (cleared)
+- reviewed: 2026-11-07T09:30:00Z
+- outcome: `DELEGATE_VERSION` + `version` subcommand, `--help` exits 0; workflow resolver keeps the bundled launcher when a project-pinned copy is older (tested by running the real snippet); structure test ties DELEGATE_VERSION to every skill's metadata.version
+- agent: claude-code / claude-sonnet-5-5
+- started: 2026-11-07T08:40:00Z
 - timeout: 600
 - worktree: none
 - branch: none
@@ -443,10 +447,10 @@ The workflow prefers a project-local `scripts/delegate.sh` over the bundled copy
 `delegate.sh version` prints the semver matching `CHANGELOG.md`; the workflow's resolver prefers the bundled copy when the project-local one is older or lacks `version`; `--help` exits 0; a structure test keeps the version in sync with the skills' `metadata.version`.
 
 ### Sub-tasks
-- [ ] Add `DELEGATE_VERSION=1.4.x` + `version` subcommand; `-h/--help` → exit 0
-- [ ] workflow.md resolver: compare versions (`sort -V` fallback to string compare) and warn when overriding
-- [ ] Structure test: `DELEGATE_VERSION` equals every `metadata.version`
-- [ ] docs/install.md pinning section: mention the check
+- [x] Add `DELEGATE_VERSION=1.4.x` + `version` subcommand; `-h/--help` → exit 0
+- [x] workflow.md resolver: compare versions (`sort -V` fallback to string compare) and warn when overriding
+- [x] Structure test: `DELEGATE_VERSION` equals every `metadata.version`
+- [x] docs/install.md pinning section: mention the check
 
 ### Verification
 ```bash
@@ -490,11 +494,13 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-26] Hermes helper parity: ledger fields, `--continue` self-delegation claim
-- status: pending
+- status: completed
 - priority: P3
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: (cleared)
+- reviewed: 2026-11-07T09:30:00Z
+- outcome: Hermes helper and generic prompt emit the full ledger/handoff field set; Rule 7 no longer suggests --continue on a first launch; structure tests pin both
+- agent: claude-code / claude-sonnet-5-5
+- started: 2026-11-07T08:40:00Z
 - timeout: 600
 - worktree: none
 - branch: none
@@ -513,9 +519,9 @@ bash tests/run-tests.sh
 Both templates emit the full field set from workflow.md Step 1 (minus nothing), Rule 7 replaced with "the child runs in the worktree cwd, so its session is separate; never pass `--continue` on a first launch".
 
 ### Sub-tasks
-- [ ] Align the TODO.md and handoff templates in both files with workflow.md Step 1/3
-- [ ] Rewrite Rule 7; structure test that neither file suggests `--continue` for a first launch
-- [ ] Hermes helper `version:` bumped with the next release
+- [x] Align the TODO.md and handoff templates in both files with workflow.md Step 1/3
+- [x] Rewrite Rule 7; structure test that neither file suggests `--continue` for a first launch
+- [x] Hermes helper `version:` bumped with the next release
 
 ### Verification
 ```bash

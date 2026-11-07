@@ -105,6 +105,8 @@ bash "$DELEGATE_SH" stop TASK-N                                    # terminate t
 bash "$DELEGATE_SH" verify TASK-N                                  # run the handoff's ```bash verification block
 bash "$DELEGATE_SH" reconcile                                      # find in_progress tasks orphaned by a crashed session
 bash "$DELEGATE_SH" next-id                                        # allocate + reserve the next TASK-N (lock-protected)
+bash "$DELEGATE_SH" cleanup TASK-N [--force]                       # after you merged: remove the worktree + branch
+bash "$DELEGATE_SH" version                                        # launcher version
 ```
 
 `status` prints `STATE=RUNNING`, `STALLED`, `EXITED_OK`, `EXITED_FAILED`, `LAUNCH_FAILED` (nonzero exit with < 500 bytes of output), `TIMED_OUT`, `STOPPED`, `EXITED_UNKNOWN` or `NOT_FOUND`, with `EXITCODE=` once the agent has exited. A relaunch refuses to start while the previous attempt is still running, keeps the retry counter, and rotates the old log to `TASK-N.log.prev`. `verify` runs the block under `set -e -o pipefail`, so any failing line fails verification. Launched tasks run inside a small supervisor process that is the agent's real parent — it captures the agent's true exit code via `wait` (not a guess from "the process disappeared"), races the timeout against natural completion and auto-cancels the timer the instant the agent exits, and is itself launched with `nohup` so it survives the calling terminal closing.
@@ -117,9 +119,10 @@ After a successful run, merge the worktree (replace `<runtime>` with `opencode`,
 
 ```bash
 git merge <runtime>/TASK-N
-git worktree remove .delegate/worktrees/TASK-N
-git branch -d <runtime>/TASK-N
+bash "$DELEGATE_SH" cleanup TASK-N
 ```
+
+`cleanup` removes the task's worktree and branch (logs under `.delegate/tasks/` are kept). It refuses while the agent is still running, and refuses — removing nothing — when the branch has commits the current branch lacks or the worktree has uncommitted changes; `--force` discards them. Without the launcher the manual equivalent is `git worktree remove .delegate/worktrees/TASK-N && git branch -d <runtime>/TASK-N`.
 
 ## Self-healing
 
