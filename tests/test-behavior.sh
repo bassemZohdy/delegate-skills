@@ -277,6 +277,9 @@ test_opencode_happy() {
   # Check watchdog PID file exists
   [ -f "$SANDBOX/.delegate/tasks/TASK-4.watchdog.pid" ] || return 1
 
+  # The generated supervisor is a real script kept for inspection: it must parse.
+  bash -n "$SANDBOX/.delegate/tasks/TASK-4.supervisor.sh" || return 1
+
   # Check mock output files
   wait_for_mock_file "$SANDBOX/mockout/opencode.args" || return 1
   grep -qF -- "--file" "$SANDBOX/mockout/opencode.args" || return 1

@@ -233,11 +233,12 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-19] CI: lint shell and workflow files (shellcheck, actionlint)
-- status: pending
+- status: in_progress
 - priority: P2
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: claude-code/2026-11-07T10:00:00Z
+- outcome-so-far: `lint` job in test.yml (shellcheck -S warning with 5 documented exclusions, actionlint 1.7.7 via docker); supervisor `bash -n` in test_opencode_happy. Awaiting first CI run to confirm shellcheck is clean.
+- agent: claude-code / claude-sonnet-5-5
+- started: 2026-11-07T09:40:00Z
 - timeout: 600
 - worktree: none
 - branch: none
@@ -459,11 +460,12 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-25] Spec compliance: run `skills-ref validate` in CI and settle the non-spec frontmatter fields
-- status: pending
+- status: in_progress
 - priority: P3
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: claude-code/2026-11-07T10:00:00Z
+- outcome-so-far: `spec` job in test.yml runs `skills-ref==0.1.1` on copies stripped of `disable-model-invocation`/`argument-hint` (skills-ref ALLOWED_FIELDS rejects them; they must stay top-level for Claude Code). Offline test pins the same rule. Awaiting first CI run.
+- agent: claude-code / claude-sonnet-5-5
+- started: 2026-11-07T09:40:00Z
 - timeout: 600
 - worktree: none
 - branch: none

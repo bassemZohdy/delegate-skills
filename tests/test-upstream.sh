@@ -177,6 +177,44 @@ else
   fail "upstream-watch.md missing or not read-only / safe-outputs based"
 fi
 
+# ─── Spec compliance (offline mirror of what `skills-ref validate` enforces) ──
+# CI runs the real validator on a copy stripped of the two Claude Code
+# extension keys (tests/validate-skills-spec.sh). This offline check pins the
+# same rule from skills-ref's source (ALLOWED_FIELDS, name/length limits).
+_SPEC_TMP=$(mktemp -d)
+if bash "$PROJECT_ROOT/tests/validate-skills-spec.sh" --prepare "$_SPEC_TMP" \
+   && "$PYTHON" - "$_SPEC_TMP" <<'SPECPY'
+import glob, os, sys, unicodedata, yaml
+ALLOWED = {"name", "description", "license", "allowed-tools", "metadata", "compatibility"}
+dirs = sorted(glob.glob(os.path.join(sys.argv[1], "delegate-to-*")))
+assert len(dirs) == 8, f"expected 8 skills, got {len(dirs)}"
+for d in dirs:
+    text = open(os.path.join(d, "SKILL.md"), encoding="utf-8").read()
+    fm = yaml.safe_load(text.split("---", 2)[1])
+    base = os.path.basename(d)
+    extra = set(fm) - ALLOWED
+    assert not extra, f"{base}: non-spec frontmatter keys {sorted(extra)}"
+    assert unicodedata.normalize("NFKC", fm["name"]) == base, f"{base}: name != directory"
+    assert len(fm["name"]) <= 64 and fm["name"] == fm["name"].lower() and "--" not in fm["name"]
+    assert 0 < len(fm["description"]) <= 1024, f"{base}: description length"
+    assert len(fm.get("compatibility", "")) <= 500, f"{base}: compatibility length"
+    assert isinstance(fm["metadata"], dict) and all(isinstance(v, str) for v in fm["metadata"].values()), f"{base}: metadata values must be strings"
+SPECPY
+then
+  pass "skills satisfy the agentskills.io field rules once the two Claude Code extension keys are stripped"
+else
+  fail "a skill violates the agentskills.io field rules beyond the two known extension keys"
+fi
+rm -rf "$_SPEC_TMP"
+for job in spec lint; do
+  grep -qE "^  $job:" "$WF/test.yml" \
+    && pass "test.yml has a '$job' job" \
+    || fail "test.yml is missing the '$job' job"
+done
+grep -q 'validate-skills-spec.sh' "$WF/test.yml" && grep -q 'skills-ref==' "$WF/test.yml" \
+  && pass "test.yml pins skills-ref and runs the spec validation script" \
+  || fail "test.yml does not run tests/validate-skills-spec.sh with a pinned skills-ref"
+
 if [ "${_standalone:-false}" = "true" ]; then
   echo ""
   echo "  $PASS passed, $FAIL failed"

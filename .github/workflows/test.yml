@@ -43,3 +43,45 @@ jobs:
         env:
           PYTHON: ${{ steps.python.outputs.python-path }}
         run: bash tests/run-tests.sh
+
+  spec:
+    # agentskills.io reference validator. The two Claude Code extension keys
+    # (disable-model-invocation, argument-hint) are stripped from a copy first —
+    # see tests/validate-skills-spec.sh.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        id: python
+        with:
+          python-version: '3.13'
+      - name: Install the reference validator
+        run: '"${{ steps.python.outputs.python-path }}" -m pip install skills-ref==0.1.1'
+      - name: Validate skills against the spec
+        run: bash tests/validate-skills-spec.sh
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: shellcheck (warnings and errors)
+        # Excluded on purpose, all intentional in this codebase:
+        #  SC2064  trap "cleanup '$X'" RETURN expands $X when the trap is set
+        #  SC2154  sourced test files use variables defined by their parent
+        #  SC2034  variables shared between sourced test files
+        #  SC1090/SC1091  sourced paths are dynamic
+        run: |
+          shellcheck --version
+          shellcheck -S warning -e SC2064,SC2154,SC2034,SC1090,SC1091 \
+            helpers/scripts/delegate.sh helpers/scripts/sync-skills.sh \
+            tests/*.sh tests/fixtures/mock-bin/*
+      - name: actionlint
+        run: |
+          docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.7 \
+            -color .github/workflows/test.yml .github/workflows/cli-contract.yml
