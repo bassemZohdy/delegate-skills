@@ -532,3 +532,217 @@ Both templates emit the full field set from workflow.md Step 1 (minus nothing), 
 grep -n 'active_form\|Active Form' helpers/hermes/delegate-tasks/SKILL.md helpers/adapters/generic-prompt.md
 bash tests/run-tests.sh
 ```
+
+
+## [TASK-27] Choose and add a LICENSE (owner decision; blocks every registry)
+- status: pending
+- priority: P1
+- owner: (none)
+- agent: none
+- started: none
+- timeout: 1800
+- worktree: none
+- branch: none
+- base_sha: none
+- dirty_tree: false
+- handoff: none
+- output_ref: LICENSE
+- retries: 0
+- depends_on: []
+- blocked_by: []
+- issue: #3
+
+### Problem
+The repo has no LICENSE file. AGENTS.md notes existing MIT declarations are 'subject to the owner's licensing/provenance review'. The Anthropic directory, skills.sh and org installs all need a clear license; without one the code is all-rights-reserved by default. The owner picks the license; the agent must not.
+
+### Active Form
+A LICENSE file exists at the repo root and every skill's `license:` frontmatter and manifest `license` field names the same license.
+
+### Sub-tasks
+- [ ] Owner decides the license and completes the provenance review AGENTS.md mentions
+- [ ] Add LICENSE; align `license:` in all 8 SKILL.md files and the README badge/text
+- [ ] Re-run `bash helpers/scripts/sync-skills.sh`
+
+### Verification
+```bash
+test -f LICENSE
+grep -L '^license:' skills/*/SKILL.md
+bash tests/run-tests.sh
+```
+
+## [TASK-28] Add Claude Code plugin and marketplace manifests
+- status: pending
+- priority: P1
+- owner: (none)
+- agent: none
+- started: none
+- timeout: 1800
+- worktree: none
+- branch: none
+- base_sha: none
+- dirty_tree: false
+- handoff: none
+- output_ref: .claude-plugin/plugin.json, .claude-plugin/marketplace.json, tests/test-structure.sh, docs/install.md
+- retries: 0
+- depends_on: [TASK-27]
+- blocked_by: []
+- issue: #4
+
+### Problem
+The repo has no `.claude-plugin/`, so `/plugin marketplace add bassemZohdy/delegate-skills` cannot work and the Anthropic directory cannot list it. skills/ already holds eight self-contained skills plus a `shared/` folder without a SKILL.md, which scanners ignore.
+
+### Active Form
+`.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` exist (`source: ./`), `/plugin install` exposes the eight delegate-to-* skills, and a structure test pins the manifest version to `DELEGATE_VERSION`.
+
+### Sub-tasks
+- [ ] Write plugin.json (name, version = DELEGATE_VERSION, description, author, homepage, license) and marketplace.json
+- [ ] Extend tests/test-structure.sh: manifest JSON parses and version matches the skills' metadata.version
+- [ ] Document `/plugin marketplace add` and `/plugin install` in docs/install.md
+- [ ] Run `claude plugin validate .` if available
+
+### Verification
+```bash
+python3 -m json.tool .claude-plugin/plugin.json >/dev/null
+python3 -m json.tool .claude-plugin/marketplace.json >/dev/null
+bash tests/run-tests.sh
+```
+
+## [TASK-29] Add Codex plugin manifest and marketplace file
+- status: pending
+- priority: P2
+- owner: (none)
+- agent: none
+- started: none
+- timeout: 1800
+- worktree: none
+- branch: none
+- base_sha: none
+- dirty_tree: false
+- handoff: none
+- output_ref: .codex-plugin/plugin.json, .agents/plugins/marketplace.json, tests/test-structure.sh, docs/install.md
+- retries: 0
+- depends_on: [TASK-27]
+- blocked_by: []
+- issue: #5
+
+### Problem
+Codex reads `.agents/skills`, which this repo already mirrors from `skills/`, but it has no `.codex-plugin/plugin.json` or `.agents/plugins/marketplace.json`, so it cannot be installed as a Codex plugin. Codex caches installs by the version in plugin.json, so that version must track `DELEGATE_VERSION`.
+
+### Active Form
+Both Codex files exist and parse, their version equals `DELEGATE_VERSION`, and the skills resolve under `.agents/skills`.
+
+### Sub-tasks
+- [ ] Write `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json`
+- [ ] Extend the structure test to pin the Codex manifest version to DELEGATE_VERSION
+- [ ] Install once in Codex and confirm delegate-to-codex is discovered; record the Codex version tried in docs/install.md
+
+### Verification
+```bash
+python3 -m json.tool .codex-plugin/plugin.json >/dev/null
+python3 -m json.tool .agents/plugins/marketplace.json >/dev/null
+bash helpers/scripts/sync-skills.sh --check
+bash tests/run-tests.sh
+```
+
+## [TASK-30] Security review and SECURITY.md before public listing
+- status: pending
+- priority: P1
+- owner: (none)
+- agent: none
+- started: none
+- timeout: 1800
+- worktree: none
+- branch: none
+- base_sha: none
+- dirty_tree: false
+- handoff: none
+- output_ref: SECURITY.md, README.md, helpers/scripts/delegate.sh
+- retries: 0
+- depends_on: []
+- blocked_by: []
+- issue: #6
+
+### Problem
+`helpers/scripts/delegate.sh` (about 51 KB) is copied into every skill and launches other agent CLIs, with opt-in permission-bypass flags (`DELEGATE_ALLOW_UNSAFE_FLAGS`, `DELEGATE_ALLOW_UNISOLATED`). A registry security scan and users installing it will look at exactly this. There is no SECURITY.md stating the threat model or how to report issues.
+
+### Active Form
+SECURITY.md states the threat model (worktrees are not a security boundary, the two opt-in variables, symlink and traversal checks, no OS sandbox) and a reporting contact, and a review of delegate.sh has no unresolved high-severity finding.
+
+### Sub-tasks
+- [ ] Review delegate.sh for command injection, unquoted expansions, temp-file and symlink handling, and the generated supervisor script
+- [ ] Write SECURITY.md from the 'Launch safety and compatibility' section of AGENTS.md plus a reporting contact
+- [ ] Link SECURITY.md from README.md
+- [ ] Add any fixes as separate TASK blocks
+
+### Verification
+```bash
+test -f SECURITY.md
+bash tests/run-tests.sh
+```
+
+## [TASK-31] Set GitHub description and topics; decide master to main rename
+- status: pending
+- priority: P2
+- owner: (none)
+- agent: none
+- started: none
+- timeout: 1800
+- worktree: none
+- branch: none
+- base_sha: none
+- dirty_tree: false
+- handoff: none
+- output_ref: docs/install.md
+- retries: 0
+- depends_on: []
+- blocked_by: []
+- issue: #7
+
+### Problem
+Discoverability on GitHub and in registries relies on the repo description and topics. The default branch is `master` while the other skills repos use `main`; renaming changes CI triggers, install URLs and the docs, so it needs an explicit decision.
+
+### Active Form
+The GitHub repo has a description and topics (for example agent-skills, claude-code, codex, delegation), and the branch decision is recorded in docs/install.md.
+
+### Sub-tasks
+- [ ] Set description and topics through the repo settings or `gh api -X PUT repos/bassemZohdy/delegate-skills/topics`
+- [ ] Decide whether to rename master to main; if yes, update workflows, docs and raw URLs in the same change
+
+### Verification
+```bash
+gh api repos/bassemZohdy/delegate-skills --jq '.description, .topics'
+```
+
+## [TASK-32] Verify single-skill `npx skills add` and submit to skills.sh and the Anthropic directory
+- status: pending
+- priority: P2
+- owner: (none)
+- agent: none
+- started: none
+- timeout: 1800
+- worktree: none
+- branch: none
+- base_sha: none
+- dirty_tree: false
+- handoff: none
+- output_ref: README.md, docs/install.md
+- retries: 0
+- depends_on: [TASK-28, TASK-30]
+- blocked_by: []
+- issue: #8
+
+### Problem
+AGENTS.md says single-skill installers fetch only the named subdirectory, which is why each skill carries its own workflow.md and delegate.sh. That has not been verified against the real skills.sh CLI. Submission to the Anthropic plugin directory (claude.ai/directory/manage) needs the owner's login and terms acceptance, so that part is an owner action.
+
+### Active Form
+`npx skills add bassemZohdy/delegate-skills --skill delegate-to-codex` installs a working skill in a clean directory, the README lists the install line, and the directory submission reference is recorded.
+
+### Sub-tasks
+- [ ] Run the single-skill install in a clean directory and confirm workflow.md and scripts/delegate.sh resolve
+- [ ] Add the install line to README.md and docs/install.md
+- [ ] Owner submits to the Anthropic plugin directory after the license, manifest and security tasks are done and records the reference in docs/install.md
+
+### Verification
+```bash
+npx skills add bassemZohdy/delegate-skills --skill delegate-to-codex
+```
