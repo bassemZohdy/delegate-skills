@@ -78,7 +78,7 @@ test_non_git_refused() {
   local sandbox code=0
   sandbox=$(mktemp -d)
   trap "cleanup_sandbox '$sandbox'" RETURN
-  cd "$sandbox"
+  cd "$sandbox" || return 1
   create_handoff "$sandbox" TASK-62
   mkdir -p "$sandbox/bin"
   cp "$FIXTURES/opencode" "$sandbox/bin/"
@@ -132,7 +132,7 @@ test_reject_false_worktree() {
     git worktree add -q "$sandbox/.delegate/worktrees/TASK-64" -b unrelated-branch || return 1
   elif [ "$type" = foreign ]; then
     init_git_repo "$sandbox/.delegate/worktrees/TASK-64"
-    cd "$sandbox"
+    cd "$sandbox" || return 1
   fi
   PATH="$sandbox/bin:$PATH" DELEGATE_ALLOW_UNISOLATED=1 \
     bash "$DELEGATE_SH" opencode TASK-64 30 > "$sandbox/output" 2>&1 || code=$?
@@ -320,5 +320,5 @@ for mode in 0 1; do
 done
 test_pi_without_approve && pass "pi without --approve launches flagless with a warning" || fail "pi without --approve launches flagless with a warning"
 test_project_path_with_spaces && pass "Quoted project/handoff paths with spaces work" || fail "Quoted project/handoff paths with spaces work"
-cd "$PROJECT_ROOT"
+cd "$PROJECT_ROOT" || exit 1
 bash "$PROJECT_ROOT/helpers/scripts/sync-skills.sh" --check && pass "Canonical/mirrored skill distributions match" || fail "Canonical/mirrored skill distributions match"

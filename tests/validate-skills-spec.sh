@@ -11,7 +11,7 @@
 # (name == directory, length limits, allowed keys).
 #
 # Usage:
-#   bash tests/validate-skills-spec.sh                # needs `skills-ref` on PATH (CI installs it)
+#   bash tests/validate-skills-spec.sh                # needs the validator on PATH (CI: pip install skills-ref==0.1.1)
 #   bash tests/validate-skills-spec.sh --prepare DIR  # only write the stripped copies to DIR
 #
 # Exit: 0 = all valid, 1 = a skill failed validation, 2 = skills-ref missing.
@@ -43,10 +43,17 @@ if [ "${1:-}" = "--prepare" ]; then
   exit 0
 fi
 
-command -v skills-ref >/dev/null 2>&1 || {
-  echo "ERROR: skills-ref is not installed (python -m pip install skills-ref==0.1.1)." >&2
+# The PyPI package is `skills-ref`; its console script is `agentskills` since
+# 0.1.1 (it was `skills-ref` in the source tree). Accept either.
+VALIDATOR=""
+for candidate in agentskills skills-ref; do
+  command -v "$candidate" >/dev/null 2>&1 && { VALIDATOR="$candidate"; break; }
+done
+[ -n "$VALIDATOR" ] || {
+  echo "ERROR: the agentskills.io validator is not installed (python -m pip install skills-ref==0.1.1)." >&2
   exit 2
 }
+echo "validator: $VALIDATOR"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -54,7 +61,7 @@ prepare "$WORK"
 
 failed=0
 for dir in "$WORK"/delegate-to-*/; do
-  if skills-ref validate "$dir"; then
+  if "$VALIDATOR" validate "$dir"; then
     echo "valid: $(basename "$dir")"
   else
     echo "INVALID: $(basename "$dir")" >&2

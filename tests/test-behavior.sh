@@ -20,7 +20,8 @@ FIXTURES="${FIXTURES:-$PROJECT_ROOT/tests/fixtures/mock-bin}"
 
 # Windows CI may supply TMPDIR as D:/... while pwd and launcher paths use /d/....
 # Allocate fixtures in the same physical Bash namespace as the process under test.
-export TMPDIR="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+TMPDIR="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+export TMPDIR
 
 # ─── Helper: Wait for mock files to be created ──────────────────────────────────
 
@@ -62,7 +63,7 @@ EOF
 
 init_git_repo() {
   local sandbox="$1"
-  cd "$sandbox"
+  cd "$sandbox" || return 1
   git init -q
   git config user.email "test@test.local"
   git config user.name "Test User"
@@ -175,7 +176,7 @@ test_missing_handoff() {
   chmod +x "$SANDBOX/bin/opencode"
 
   # Run
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="$SANDBOX/bin:$PATH" bash "$DELEGATE_SH" opencode TASK-1 5 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -199,7 +200,7 @@ test_missing_runtime() {
   create_handoff "$SANDBOX" "TASK-2"
 
   # Run
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$SANDBOX/bin" bash "$DELEGATE_SH" totally-fake-runtime-xyz TASK-2 5 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -225,7 +226,7 @@ test_unsupported_runtime() {
   chmod +x "$SANDBOX/bin/unsupported-cli"
 
   # Run
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="$SANDBOX/bin:$PATH" bash "$DELEGATE_SH" unsupported-cli TASK-3 5 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -252,7 +253,7 @@ test_opencode_happy() {
   chmod +x "$SANDBOX/bin/opencode"
 
   # Run
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" opencode TASK-4 30 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -319,7 +320,7 @@ test_pi_pid_capture() {
 
   # Run with MOCK_HANG (avoid command substitution to prevent bash 3.2 hang)
   mkdir -p "$SANDBOX/mockout"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" pi TASK-5 120 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -364,7 +365,7 @@ test_hermes_pid_capture() {
 
   # Run (avoid command substitution)
   mkdir -p "$SANDBOX/mockout"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" hermes TASK-6 120 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -409,7 +410,7 @@ test_kimi_pid_capture() {
 
   # Run (avoid command substitution)
   mkdir -p "$SANDBOX/mockout"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" kimi TASK-7 120 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -454,7 +455,7 @@ test_mimo_file_supported() {
 
   # Run
   mkdir -p "$SANDBOX/mockout"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 MOCK_MIMO_HAS_FILE=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" mimo TASK-8 30 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -494,7 +495,7 @@ test_mimo_file_not_supported() {
 
   # Run
   mkdir -p "$SANDBOX/mockout"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" mimo TASK-9 30 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -534,7 +535,7 @@ test_codex_stdin_framing() {
 
   # Run
   mkdir -p "$SANDBOX/mockout"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" codex TASK-10 30 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -577,7 +578,7 @@ test_agy_add_dir() {
 
   # Run
   mkdir -p "$SANDBOX/mockout"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" agy TASK-11 30 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -616,7 +617,7 @@ test_hermes_absolute_path() {
 
   # Run
   mkdir -p "$SANDBOX/mockout"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" hermes TASK-12 30 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -653,7 +654,7 @@ test_kimi_absolute_path() {
 
   # Run
   mkdir -p "$SANDBOX/mockout"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" kimi TASK-13 30 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -689,7 +690,7 @@ test_not_git_repo() {
 
   # Run
   mkdir -p "$SANDBOX/mockout"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   DELEGATE_ALLOW_UNISOLATED=1 PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" opencode TASK-14 30 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -727,7 +728,7 @@ test_worktree_reuse() {
   chmod +x "$SANDBOX/bin/opencode"
 
   # First run
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out1.txt
   PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 bash "$DELEGATE_SH" opencode TASK-15 30 < /dev/null > "$tempfile" 2>&1
   local exit_code1=$?
@@ -760,7 +761,7 @@ test_watchdog_sigterm() {
 
   # Run with short timeout and MOCK_HANG
   mkdir -p "$SANDBOX/mockout"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local tempfile=$SANDBOX/test_out.txt
   PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$SANDBOX/mockout" bash "$DELEGATE_SH" opencode TASK-16 2 < /dev/null > "$tempfile" 2>&1
   local exit_code=$?
@@ -803,7 +804,7 @@ test_exit_code_capture() {
   cp "$FIXTURES/opencode" "$SANDBOX/bin/"
   chmod +x "$SANDBOX/bin/opencode"
 
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
     bash "$DELEGATE_SH" opencode TASK-17 30 < /dev/null > "$SANDBOX/test_out.txt" 2>&1
   [ "$?" = "0" ] || return 1
@@ -843,7 +844,7 @@ test_status_failed_exitcode() {
   cp "$FIXTURES/opencode" "$SANDBOX/bin/"
   chmod +x "$SANDBOX/bin/opencode"
 
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
     bash "$DELEGATE_SH" opencode TASK-18 2 < /dev/null > "$SANDBOX/test_out.txt" 2>&1
   [ "$?" = "0" ] || return 1
@@ -884,7 +885,7 @@ test_status_failure_classes() {
   create_handoff "$SANDBOX" "TASK-41"
   cp "$FIXTURES/opencode" "$SANDBOX/bin/"
   chmod +x "$SANDBOX/bin/opencode"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
 
   # Verbose output then exit 3 → a real failure after doing work.
   PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_EXIT=3 MOCK_VERBOSE=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
@@ -918,7 +919,7 @@ test_relaunch_semantics() {
   create_handoff "$SANDBOX" "TASK-42"
   cp "$FIXTURES/opencode" "$SANDBOX/bin/"
   chmod +x "$SANDBOX/bin/opencode"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   local T="$SANDBOX/.delegate/tasks"
 
   # First attempt hangs.
@@ -970,7 +971,7 @@ test_continue_and_model_flags() {
   create_handoff "$SANDBOX" "TASK-43"
   cp "$FIXTURES/$rt" "$SANDBOX/bin/"
   chmod +x "$SANDBOX/bin/$rt"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_MIMO_HAS_FILE=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
     bash "$DELEGATE_SH" "$rt" TASK-43 30 --continue --model test-model/v1 < /dev/null > /dev/null 2>&1 || return 1
   snapshot_watchdog_children "$SANDBOX"
@@ -1005,7 +1006,7 @@ test_reject_bad_model() {
   create_handoff "$SANDBOX" "TASK-44"
   cp "$FIXTURES/opencode" "$SANDBOX/bin/"
   chmod +x "$SANDBOX/bin/opencode"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   for m in '--auto' 'a b' 'x;touch escape' ''; do
     code=0
     PATH="$SANDBOX/bin:$PATH" bash "$DELEGATE_SH" opencode TASK-44 30 --model "$m" > "$SANDBOX/out" 2>&1 || code=$?
@@ -1025,7 +1026,7 @@ test_delegate_dir_ignored() {
   create_handoff "$SANDBOX" "TASK-45"
   cp "$FIXTURES/opencode" "$SANDBOX/bin/"
   chmod +x "$SANDBOX/bin/opencode"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_OUT_DIR="$SANDBOX/mockout" \
     bash "$DELEGATE_SH" opencode TASK-45 30 < /dev/null > /dev/null 2>&1 || return 1
   snapshot_watchdog_children "$SANDBOX"
@@ -1048,7 +1049,7 @@ test_status_not_found() {
   SANDBOX=$(mktemp -d)
   trap "cleanup_sandbox '$SANDBOX'" RETURN
   mkdir -p "$SANDBOX/.delegate/tasks"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   bash "$DELEGATE_SH" status TASK-999 | grep -q "^STATE=NOT_FOUND$" || return 1
 }
 
@@ -1060,7 +1061,7 @@ test_verify_pass_and_fail() {
   trap "cleanup_sandbox '$SANDBOX'" RETURN
 
   mkdir -p "$SANDBOX/.delegate/tasks"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
 
   cat > "$SANDBOX/.delegate/tasks/TASK-20.md" <<'EOF'
 # Handoff: TASK-20
@@ -1142,7 +1143,7 @@ test_reconcile_stale() {
   SANDBOX=$(mktemp -d)
   trap "cleanup_sandbox '$SANDBOX'" RETURN
   mkdir -p "$SANDBOX/.delegate/tasks"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
 
   cat > "$SANDBOX/TODO.md" <<'EOF'
 ## [TASK-30] a completed one
@@ -1183,7 +1184,7 @@ test_next_id_missing_archive() {
   local SANDBOX
   SANDBOX=$(mktemp -d)
   trap "cleanup_sandbox '$SANDBOX'" RETURN
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
 
   # No TODO.md at all → starts at TASK-1.
   [ "$(bash "$DELEGATE_SH" next-id)" = "TASK-1" ] || return 1
@@ -1213,7 +1214,7 @@ test_next_id_reserves() {
   local SANDBOX a b
   SANDBOX=$(mktemp -d)
   trap "cleanup_sandbox '$SANDBOX'" RETURN
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   a=$(bash "$DELEGATE_SH" next-id) || return 1
   b=$(bash "$DELEGATE_SH" next-id) || return 1
   [ "$a" = TASK-1 ] && [ "$b" = TASK-2 ] || return 1
@@ -1270,7 +1271,7 @@ test_timeout_kills_descendants() {
   trap "cleanup_sandbox '$SANDBOX'" RETURN
   _descendant_fixture "$SANDBOX"
   create_handoff "$SANDBOX" "TASK-50"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
     bash "$DELEGATE_SH" agy TASK-50 2 < /dev/null > /dev/null 2>&1 || return 1
   snapshot_watchdog_children "$SANDBOX"
@@ -1291,7 +1292,7 @@ test_stop_kills_descendants() {
   trap "cleanup_sandbox '$SANDBOX'" RETURN
   _descendant_fixture "$SANDBOX"
   create_handoff "$SANDBOX" "TASK-51"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
     bash "$DELEGATE_SH" agy TASK-51 120 < /dev/null > /dev/null 2>&1 || return 1
   snapshot_watchdog_children "$SANDBOX"
@@ -1317,7 +1318,7 @@ test_status_markers_without_exitcode() {
   # not try to kill (a reused pid would belong to someone else).
   trap "rm -f '$T/TASK-52.pid'; cleanup_sandbox '$SANDBOX'" RETURN
   mkdir -p "$T"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   true & dead=$!; wait "$dead" 2>/dev/null
   printf '# Handoff\n' > "$T/TASK-52.md"
   echo "$dead" > "$T/TASK-52.pid"
@@ -1347,7 +1348,7 @@ test_relaunch_after_worktree_deleted() {
   create_handoff "$SANDBOX" "TASK-53"
   cp "$FIXTURES/opencode" "$SANDBOX/bin/"
   chmod +x "$SANDBOX/bin/opencode"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   PATH="$SANDBOX/bin:$PATH" MOCK_DURATION=0 MOCK_OUT_DIR="$SANDBOX/mockout" \
     bash "$DELEGATE_SH" opencode TASK-53 30 < /dev/null > /dev/null 2>&1 || return 1
   snapshot_watchdog_children "$SANDBOX"
@@ -1384,7 +1385,7 @@ test_status_stalled() {
   create_handoff "$SANDBOX" "TASK-54"
   cp "$FIXTURES/opencode" "$SANDBOX/bin/"
   chmod +x "$SANDBOX/bin/opencode"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   env "${env_extra[@]}" PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$OUT" \
     bash "$DELEGATE_SH" opencode TASK-54 120 < /dev/null > /dev/null 2>&1 || return 1
   snapshot_watchdog_children "$SANDBOX"
@@ -1408,7 +1409,7 @@ test_next_id_reclaims_stale_lock() {
   local SANDBOX start id
   SANDBOX=$(mktemp -d)
   trap "cleanup_sandbox '$SANDBOX'" RETURN
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   mkdir -p "$SANDBOX/.delegate/todo.lock"
   touch -t 200001010000 "$SANDBOX/.delegate/todo.lock" || return 1
   start=$(date +%s)
@@ -1431,7 +1432,7 @@ test_cleanup() {
   for t in 55 56 58; do create_handoff "$SANDBOX" "TASK-$t"; done
   cp "$FIXTURES/opencode" "$SANDBOX/bin/"
   chmod +x "$SANDBOX/bin/opencode"
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
 
   # 1. Refuses while the agent is running, and removes nothing.
   PATH="$SANDBOX/bin:$PATH" MOCK_HANG=1 MOCK_OUT_DIR="$SANDBOX/mockout" \
@@ -1484,7 +1485,7 @@ test_version_and_resolver() {
   local SANDBOX v code skill_dir snippet
   SANDBOX=$(mktemp -d)
   trap "cleanup_sandbox '$SANDBOX'" RETURN
-  cd "$SANDBOX"
+  cd "$SANDBOX" || return 1
   v=$(bash "$DELEGATE_SH" version) || return 1
   [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
   code=0; bash "$DELEGATE_SH" --help > /dev/null 2>&1 || code=$?
@@ -1498,7 +1499,7 @@ test_version_and_resolver() {
   cp "$DELEGATE_SH" "$skill_dir/scripts/delegate.sh"
   snippet=$(awk '/^Resolve it once/{s=1} s&&/^```bash/{c=1;next} s&&c&&/^```/{exit} s&&c' "$PROJECT_ROOT/skills/shared/workflow.md" | sed "s|<skill-dir>|$skill_dir|g")
   [ -n "$snippet" ] || return 1
-  cd "$SANDBOX/proj"
+  cd "$SANDBOX/proj" || return 1
   resolve() { bash -c "$snippet" 2>"$SANDBOX/resolver.err" | sed -n 's/^DELEGATE_SH=//p'; }
 
   # no project copy -> bundled

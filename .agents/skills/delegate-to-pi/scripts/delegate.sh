@@ -467,8 +467,8 @@ EOF
   # available; skipped gracefully otherwise (e.g. Git Bash on Windows, which
   # typically lacks it) — kill_tree still works via its child-scan fallback,
   # just without the process-group layer.
-  local SETSID=""
-  command -v setsid &>/dev/null && SETSID="setsid"
+  local SETSID_ARGS=()
+  command -v setsid &>/dev/null && SETSID_ARGS=(setsid)
 
   # ── Resolve the per-runtime command as a safely-quoted string ───────────
   # Built once here (fast, synchronous — help-flag detection must run before
@@ -500,7 +500,7 @@ EOF
         echo "$OPENCODE_HELP" | grep -q -- "--dangerously-skip-permissions" && OPENCODE_AUTO="--dangerously-skip-permissions"
         echo "$OPENCODE_HELP" | grep -q -- "--auto" && OPENCODE_AUTO="--auto"
       fi
-      local args=($SETSID nohup opencode run "$RUN_MSG" --dir "$WORK_DIR")
+      local args=(${SETSID_ARGS[@]+"${SETSID_ARGS[@]}"} nohup opencode run "$RUN_MSG" --dir "$WORK_DIR")
       [ "$CONTINUE" = 1 ] && args+=(--continue)
       [ -n "$MODEL" ] && args+=(-m "$MODEL")
       [ -n "$OPENCODE_AUTO" ] && args+=("$OPENCODE_AUTO")
@@ -510,7 +510,7 @@ EOF
       ;;
 
     pi)
-      local args=($SETSID nohup pi -p)
+      local args=(${SETSID_ARGS[@]+"${SETSID_ARGS[@]}"} nohup pi -p)
       # pi never prompts before running bash/edit/write, whatever flags are
       # passed — say so on every launch, like kimi >= 2 below (policy: warn and
       # launch; the worktree is the only code isolation).
@@ -545,15 +545,15 @@ EOF
       # --file is an array option: keep it last.
       echo "$MIMO_HELP" | grep -q -- "--file" && { MIMO_HAS_FILE=1; MIMO_ARGS+=(--file "$TASK_FILE"); }
       if [ -n "$MIMO_HAS_FILE" ]; then
-        local args=($SETSID nohup mimo run "$RUN_MSG" ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"})
+        local args=(${SETSID_ARGS[@]+"${SETSID_ARGS[@]}"} nohup mimo run "$RUN_MSG" ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"})
       else
-        local args=($SETSID nohup mimo run "$READ_MSG" ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"})
+        local args=(${SETSID_ARGS[@]+"${SETSID_ARGS[@]}"} nohup mimo run "$READ_MSG" ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"})
       fi
       INNER_CMD=$(printf '%q ' "${args[@]}")
       ;;
 
     hermes)
-      local args=($SETSID nohup hermes chat -q "$READ_MSG" -Q)
+      local args=(${SETSID_ARGS[@]+"${SETSID_ARGS[@]}"} nohup hermes chat -q "$READ_MSG" -Q)
       [ "$CONTINUE" = 1 ] && args+=(--continue)
       [ -n "$MODEL" ] && args+=(-m "$MODEL")
       [ "$ALLOW_UNSAFE" = 1 ] && args+=(--yolo --accept-hooks)
@@ -561,7 +561,7 @@ EOF
       ;;
 
     kimi)
-      local args=($SETSID nohup kimi -p "$READ_MSG")
+      local args=(${SETSID_ARGS[@]+"${SETSID_ARGS[@]}"} nohup kimi -p "$READ_MSG")
       # kimi's continue flag is lowercase -c ("continue the previous session
       # for the working directory"); -C does not exist.
       [ "$CONTINUE" = 1 ] && args+=(-c)
@@ -595,7 +595,7 @@ EOF
         # cwd), and the sandbox mode goes through a config override instead.
         pre_q=$(printf '%q ' printf '%s\n' "$RUN_MSG")
         INNER_CMD_STDIN="$pre_q"
-        codex_args=($SETSID nohup codex exec resume --last)
+        codex_args=(${SETSID_ARGS[@]+"${SETSID_ARGS[@]}"} nohup codex exec resume --last)
         if [ "$ALLOW_UNSAFE" = 1 ]; then
           codex_args+=(--dangerously-bypass-approvals-and-sandbox)
         else
@@ -605,7 +605,7 @@ EOF
         pre_q=$(printf '%q ' printf '%s\n\n' "Execute the task described in the handoff document below. Follow all instructions in it exactly.")
         catq=$(printf '%q ' cat "$TASK_FILE")
         INNER_CMD_STDIN="{ $pre_q; $catq; }"
-        codex_args=($SETSID nohup codex exec -C "$WORK_DIR")
+        codex_args=(${SETSID_ARGS[@]+"${SETSID_ARGS[@]}"} nohup codex exec -C "$WORK_DIR")
         if [ "$ALLOW_UNSAFE" = 1 ]; then
           codex_args+=(--dangerously-bypass-approvals-and-sandbox)
         else
@@ -622,7 +622,7 @@ EOF
       ;;
 
     agy)
-      local args=($SETSID nohup agy --print "$READ_MSG" --add-dir "$WORK_DIR")
+      local args=(${SETSID_ARGS[@]+"${SETSID_ARGS[@]}"} nohup agy --print "$READ_MSG" --add-dir "$WORK_DIR")
       [ "$CONTINUE" = 1 ] && args+=(--continue)
       [ -n "$MODEL" ] && args+=(--model "$MODEL")
       [ "$ALLOW_UNSAFE" = 1 ] && args+=(--dangerously-skip-permissions)
