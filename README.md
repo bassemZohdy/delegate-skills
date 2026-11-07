@@ -313,6 +313,10 @@ Both variables accept only `0` (default) or `1`. The second enables supported
 OpenCode `--auto`/legacy skip-permissions, Pi `--approve`, MiMo skip-permissions,
 Hermes YOLO/hook acceptance, Kimi YOLO, Codex approval/sandbox bypass or Agy
 skip-permissions. Opt-in is never inferred from worktree availability or retry.
+Two runtimes cannot keep tool approvals at all: **pi** never prompts before running
+its tools, and **kimi-code ≥ 2** print mode (`-p`) is auto-permission. The launcher
+starts both with a stderr warning rather than refusing — for them the worktree is
+the only code isolation, so add an external sandbox when that matters.
 Git worktrees separate code edits; **they are not an OS security boundary**.
 They share repository metadata and do not constrain processes, secrets, network
 access or host filesystem access. Use an independently configured sandbox when

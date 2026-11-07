@@ -502,6 +502,10 @@ EOF
 
     pi)
       local args=($SETSID nohup pi -p)
+      # pi never prompts before running bash/edit/write, whatever flags are
+      # passed — say so on every launch, like kimi >= 2 below (policy: warn and
+      # launch; the worktree is the only code isolation).
+      echo "WARN: pi has no per-tool approval prompts; its tools run unprompted and the worktree is the only code isolation." >&2
       [ "$CONTINUE" = 1 ] && args+=(--continue)
       [ -n "$MODEL" ] && args+=(--model "$MODEL")
       # --approve only trusts project-local pi resources for this run; pi has

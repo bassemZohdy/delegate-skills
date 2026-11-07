@@ -771,8 +771,10 @@ test_watchdog_sigterm() {
   # 30` (the SIGKILL grace period) DURING this wait — a new child process with
   # a different PID than the one snapshot_watchdog_children caught right after
   # launch. Polling here catches that second child too, so cleanup can kill it.
+  # The timer fires at 2s, then walks the process table before signalling
+  # (slow ps on Git Bash, slower under suite load): allow 8s, not 4s.
   local waited=0
-  while [ "$waited" -lt 40 ]; do
+  while [ "$waited" -lt 80 ]; do
     snapshot_watchdog_children "$SANDBOX"
     [ -f "$SANDBOX/mockout/opencode.status" ] && grep -q "KILLED" "$SANDBOX/mockout/opencode.status" 2>/dev/null && break
     sleep 0.1

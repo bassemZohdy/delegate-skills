@@ -20,7 +20,7 @@ START_TIME=$(date +%s)
 
 while true; do
   date +%s > "$MOCK_OUT_DIR/agy.heartbeat"
-  sleep 0.2
+  sleep 0.2 || true   # a TERM aimed at this child must not trip errexit before the TERM trap runs
 
   if [ "$MOCK_HANG" = "1" ]; then
     continue

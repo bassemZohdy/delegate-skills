@@ -309,11 +309,13 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-21] Decide: launch policy for runtimes that cannot keep tool approvals (kimi ≥ 2 print mode, pi)
-- status: pending
+- status: completed
 - priority: P2
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: (cleared)
+- reviewed: 2026-11-07T08:00:00Z
+- outcome: owner chose (a) warn-and-launch; pi now warns on every launch like kimi >= 2; README/usage state the limitation; tests for both opt-in modes
+- agent: claude-code / claude-sonnet-5-5
+- started: 2026-11-07T07:50:00Z
 - timeout: 600
 - worktree: none
 - branch: none
@@ -332,10 +334,10 @@ The safety contract says bypass is opt-in via `DELEGATE_ALLOW_UNSAFE_FLAGS=1`, b
 Decision recorded here; launcher, safety tests (`tests/test-safety.sh` kimi2/pi cases), docs/usage.md "Launch safety" and README updated to match.
 
 ### Sub-tasks
-- [ ] Owner picks (a)/(b)/(c) and records it in this block
-- [ ] Implement in `cmd_launch` for kimi (version-gated) and pi
-- [ ] Safety tests assert the chosen behavior for mode 0 and 1
-- [ ] Document in docs/usage.md, README "Launch safety", AGENTS.md gotchas
+- [x] Owner picks (a)/(b)/(c) and records it in this block — owner chose (a) warn-and-launch
+- [x] Implement in `cmd_launch` for kimi (version-gated) and pi
+- [x] Safety tests assert the chosen behavior for mode 0 and 1
+- [x] Document in docs/usage.md, README "Launch safety", AGENTS.md gotchas (AGENTS.md already carries the kimi/pi gotchas)
 
 ### Verification
 ```bash

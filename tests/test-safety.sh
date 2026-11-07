@@ -249,6 +249,22 @@ test_pi_without_approve() {
   wait_for_mock_file "$sandbox/.delegate/tasks/TASK-70.exitcode"
 }
 
+# pi has no approval prompts at all: every launch must say so (policy: warn and launch).
+test_pi_warns_no_approvals() {
+  local mode="$1" sandbox
+  sandbox=$(mktemp -d)
+  trap "cleanup_sandbox '$sandbox'" RETURN
+  init_git_repo "$sandbox"
+  create_handoff "$sandbox" TASK-71
+  mkdir -p "$sandbox/bin" "$sandbox/mockout"
+  cp "$FIXTURES/pi" "$sandbox/bin/"
+  chmod +x "$sandbox/bin/pi"
+  PATH="$sandbox/bin:$PATH" DELEGATE_ALLOW_UNSAFE_FLAGS="$mode" MOCK_DURATION=0 MOCK_OUT_DIR="$sandbox/mockout"     bash "$DELEGATE_SH" pi TASK-71 30 > "$sandbox/output" 2>&1 || return 1
+  snapshot_watchdog_children "$sandbox"
+  grep -q 'pi has no per-tool approval prompts' "$sandbox/output" || return 1
+  wait_for_mock_file "$sandbox/.delegate/tasks/TASK-71.exitcode"
+}
+
 test_project_path_with_spaces() {
   local fixture sandbox
   fixture=$(mktemp -d)
@@ -298,6 +314,9 @@ test_legacy_opencode_optin && pass "Legacy OpenCode approval bypass is opt-in on
 test_mimo_file_without_dir && pass "MiMo file support without --dir enters verified worktree" || fail "MiMo file support without --dir enters verified worktree"
 for mode in 0 1; do
   test_kimi2_print_mode "$mode" && pass "kimi >= 2: no -y with -p, auto-permission warned (opt-in=$mode)" || fail "kimi >= 2: no -y with -p, auto-permission warned (opt-in=$mode)"
+done
+for mode in 0 1; do
+  test_pi_warns_no_approvals "$mode" && pass "pi: no-approval warning on every launch (opt-in=$mode)" || fail "pi: no-approval warning on every launch (opt-in=$mode)"
 done
 test_pi_without_approve && pass "pi without --approve launches flagless with a warning" || fail "pi without --approve launches flagless with a warning"
 test_project_path_with_spaces && pass "Quoted project/handoff paths with spaces work" || fail "Quoted project/handoff paths with spaces work"
