@@ -28,11 +28,11 @@ The agent works independently while you keep collaborating with your AI assistan
 | `delegate-to-any` | auto-selects best available | install any runtime below |
 | `delegate-to-opencode` | [OpenCode](https://opencode.ai) | `npm install -g opencode-ai` |
 | `delegate-to-codex` | [OpenAI Codex CLI](https://github.com/openai/codex) | `npm install -g @openai/codex` |
-| `delegate-to-pi` | [Pi](https://earendil.works) | `bun install -g @earendil-works/pi-coding-agent` |
-| `delegate-to-mimo` | [MiMo](https://mimo.ai) | `npm install -g @mimo-ai/cli` |
-| `delegate-to-hermes` | [Hermes Agent](https://hermes.agent) | see Hermes docs |
-| `delegate-to-kimi` | [Kimi Code](https://kimi.ai) | see Kimi docs |
-| `delegate-to-agy` | [Agy](https://agy.dev) | see Agy docs |
+| `delegate-to-pi` | [Pi](https://pi.dev) | `npm install -g @earendil-works/pi-coding-agent` |
+| `delegate-to-mimo` | [MiMo](https://mimo.xiaomi.com/mimocode) | `npm install -g @mimo-ai/cli` |
+| `delegate-to-hermes` | [Hermes Agent](https://github.com/NousResearch/hermes-agent) | see Hermes docs |
+| `delegate-to-kimi` | [Kimi Code](https://moonshotai.github.io/kimi-code/) | see Kimi docs |
+| `delegate-to-agy` | [Agy](https://antigravity.google/docs/cli/) | see Agy docs |
 
 ---
 
@@ -108,7 +108,9 @@ Claude Code writes the handoff document, creates the worktree, launches opencode
 ### Hermes Agent
 
 ```bash
-cp -r helpers/hermes/delegate-tasks ~/.hermes/skills/autonomous-ai-agents/
+HERMES_SKILLS="${HERMES_HOME:-$HOME/.hermes}/skills"    # Windows default: %LOCALAPPDATA%\hermes
+mkdir -p "$HERMES_SKILLS/autonomous-ai-agents"
+cp -r helpers/hermes/delegate-tasks "$HERMES_SKILLS/autonomous-ai-agents/"
 ```
 
 ```
@@ -119,11 +121,14 @@ cp -r helpers/hermes/delegate-tasks ~/.hermes/skills/autonomous-ai-agents/
 
 Copy `helpers/adapters/generic-prompt.md` into your AI's system prompt or workspace instructions. It contains the full delegation protocol and all launch commands.
 
-Or call the launcher script directly — after writing a handoff doc to `.delegate/tasks/TASK-1.md`:
+Or call the launcher script directly from your project root — after writing a handoff doc to `.delegate/tasks/TASK-1.md`:
 
 ```bash
-bash helpers/scripts/delegate.sh opencode TASK-1 1800
+bash /path/to/delegate-skills/helpers/scripts/delegate.sh opencode TASK-1 1800
+bash /path/to/delegate-skills/helpers/scripts/delegate.sh status TASK-1
 ```
+
+Every installed skill also carries its own copy at `<skill-folder>/scripts/delegate.sh`, which is what the skills use.
 
 ---
 
@@ -135,8 +140,7 @@ Each task gets its own git branch (`<runtime>/TASK-N`) and a matching worktree a
 
 ```bash
 git merge opencode/TASK-1
-git worktree remove .delegate/worktrees/TASK-1
-git branch -d opencode/TASK-1
+bash "$DELEGATE_SH" cleanup TASK-1     # removes the worktree and branch; refuses if anything is unmerged
 ```
 
 ### Handoff documents
@@ -157,14 +161,14 @@ The skill monitors the agent and recovers from common failure modes:
 | Symptom | Response |
 |---------|----------|
 | Process exits immediately, log < 500 bytes | Read error, fix command, retry (max 2×) |
-| Process running, log not growing between polls | Kill, retry with `--continue` |
+| Process running, log not growing and no worktree writes between polls | `delegate.sh stop`, retry with `--continue` |
 | Process exits cleanly, output missing | Retry with `--continue` |
 | Verification fails after output is present | Retry with `--continue` + failure notes |
 | All retries exhausted | Mark `failed`, report log tail |
 
 ### Timeout watchdog
 
-Each launch gets a background watchdog: SIGTERM after the configured timeout, SIGKILL after 30 seconds if still alive. Timeout tiers:
+Each launch gets a background watchdog: SIGTERM after the configured timeout, SIGKILL after 30 seconds if still alive. With the launcher, the watchdog lives inside a supervisor process that cancels it the moment the agent exits, records the timeout so `status` reports `TIMED_OUT`, and signals every descendant of the agent (deepest first) — so a wrapper script, a spawned worker or a running test suite dies with it even where no process group exists (Git Bash, macOS). Timeout tiers:
 
 | Tier | Task type | Timeout |
 |------|-----------|---------|
@@ -181,21 +185,31 @@ Each launch gets a background watchdog: SIGTERM after the configured timeout, SI
 delegate-skills/
 ├── README.md
 ├── AGENTS.md                        # agent-facing conventions and CLI reference table
+├── CHANGELOG.md                     # release history
 ├── TODO.md                          # task ledger (append-only when skills are in use)
+├── TODO-ARCHIVE.md                  # completed tasks moved out of TODO.md
+│
+├── .github/
+│   ├── upstream-sources.yml         # per-runtime docs/changelog URLs, verified versions, required flags
+│   └── workflows/
+│       ├── test.yml                 # mock test suite, Ubuntu + Windows Git Bash
+│       ├── cli-contract.yml         # weekly: latest npm CLIs vs the flags delegate.sh passes
+│       └── upstream-watch.md        # weekly gh-aw agentic workflow (compile to .lock.yml)
 │
 ├── skills/                          # installable skills — copy any single folder, or all of them
 │   ├── shared/
 │   │   └── workflow.md              # canonical source for Steps 0–3 and 5 — maintainer-only, not distributed
 │   ├── delegate-to-any/             # auto-router: picks best installed runtime
 │   │   ├── SKILL.md
-│   │   └── workflow.md              # copy of skills/shared/workflow.md — makes the folder self-contained
-│   ├── delegate-to-opencode/{SKILL.md,workflow.md}
-│   ├── delegate-to-codex/{SKILL.md,workflow.md}
-│   ├── delegate-to-pi/{SKILL.md,workflow.md}
-│   ├── delegate-to-mimo/{SKILL.md,workflow.md}
-│   ├── delegate-to-hermes/{SKILL.md,workflow.md}
-│   ├── delegate-to-kimi/{SKILL.md,workflow.md}
-│   └── delegate-to-agy/{SKILL.md,workflow.md}
+│   │   ├── workflow.md              # copy of skills/shared/workflow.md — makes the folder self-contained
+│   │   └── scripts/delegate.sh      # copy of helpers/scripts/delegate.sh — the bundled launcher
+│   ├── delegate-to-opencode/{SKILL.md,workflow.md,scripts/delegate.sh}
+│   ├── delegate-to-codex/{SKILL.md,workflow.md,scripts/delegate.sh}
+│   ├── delegate-to-pi/{SKILL.md,workflow.md,scripts/delegate.sh}
+│   ├── delegate-to-mimo/{SKILL.md,workflow.md,scripts/delegate.sh}
+│   ├── delegate-to-hermes/{SKILL.md,workflow.md,scripts/delegate.sh}
+│   ├── delegate-to-kimi/{SKILL.md,workflow.md,scripts/delegate.sh}
+│   └── delegate-to-agy/{SKILL.md,workflow.md,scripts/delegate.sh}
 │
 ├── docs/                            # documentation only
 │   ├── usage.md                     # usage guide, timeout tiers, model overrides
@@ -203,7 +217,8 @@ delegate-skills/
 │
 ├── helpers/                         # setup and configure helpers (not skills)
 │   ├── scripts/
-│   │   └── delegate.sh              # portable bash launcher (all 7 runtimes)
+│   │   ├── delegate.sh              # portable bash launcher (all 7 runtimes) — canonical source
+│   │   └── sync-skills.sh           # copies workflow.md + delegate.sh into every skill, mirrors .agents/
 │   ├── adapters/
 │   │   └── generic-prompt.md        # universal prompt for any AI tool
 │   └── hermes/
@@ -213,6 +228,9 @@ delegate-skills/
     ├── run-tests.sh
     ├── test-structure.sh            # structure/text-pattern assertions
     ├── test-behavior.sh             # behavioral tests — executes delegate.sh for real
+    ├── test-safety.sh               # permission defaults, isolation failures, input validation
+    ├── test-upstream.sh             # upstream manifest + contract checker (no network)
+    ├── check-cli-contract.py        # installed CLIs' --help vs the flags delegate.sh passes
     └── fixtures/
         └── mock-bin/                # mock CLI binaries used by test-behavior.sh
 ```
@@ -236,10 +254,12 @@ python3 -m pip install -r tests/requirements.txt
 bash tests/run-tests.sh
 ```
 
-Two layers:
+Four layers:
 
+- **Upstream manifest & contract tests** (`tests/test-upstream.sh`) — `.github/upstream-sources.yml` stays consistent with the AGENTS.md CLI table and `delegate.sh`, and the contract checker is exercised offline.
 - **Structure tests** (`tests/test-structure.sh`) — frontmatter, workflow references, helper files, runtime coverage, and grep-based semantic regression checks (worktree isolation, real agent PID capture references, watchdog teardown, Codex handoff framing).
-- **Behavior tests** (`tests/test-behavior.sh`) — actually *executes* `helpers/scripts/delegate.sh` against mock CLI binaries (`tests/fixtures/mock-bin/`) in isolated `mktemp -d` sandboxes, asserting real process and filesystem state: git worktree creation, live PID capture (the exact regression class from the v1.1.0 subshell-PID bug), correct flags passed per runtime, watchdog SIGTERM firing on timeout, and more. The `skills/*/SKILL.md` files themselves are natural-language instructions for an AI to follow, not executable, so this is the practical ceiling for automated testing of the runtime-launch logic — everything that actually runs (`delegate.sh`) is covered by real execution, not just text matching.
+- **Behavior tests** (`tests/test-behavior.sh`) — actually *executes* `helpers/scripts/delegate.sh` against mock CLI binaries (`tests/fixtures/mock-bin/`) in isolated `mktemp -d` sandboxes, asserting real process and filesystem state: git worktree creation, live PID capture (the exact regression class from the v1.1.0 subshell-PID bug), correct flags passed per runtime (including `--continue`/`--model`), watchdog SIGTERM firing on timeout, stop/relaunch semantics, strict `verify`, and lock-plus-reservation task ids. The `skills/*/SKILL.md` files themselves are natural-language instructions for an AI to follow, not executable, so this is the practical ceiling for automated testing of the runtime-launch logic — everything that actually runs (`delegate.sh`) is covered by real execution, not just text matching.
+- **Safety tests** (`tests/test-safety.sh`) — bypass flags stay off unless explicitly opted in, isolation failures refuse to launch, task ids/timeouts/opt-in values are validated, and symlinked state paths are refused.
 
 Tests require Bash, Git, standard coreutils, Python 3 and the pinned PyYAML test
 dependency. All eight skill frontmatter files are parsed; missing Python/PyYAML
@@ -251,6 +271,30 @@ otherwise `python3`, falling back to `python` if `python3` is absent. The select
 interpreter must be Python 3 with PyYAML installed. CI uses the setup action's
 exact `python-path` for both dependency installation and parser tests.
 
+### Tracking upstream CLI changes
+
+The runtimes change their flags often, so two scheduled workflows watch them:
+
+| Workflow | How | Output |
+|----------|-----|--------|
+| `.github/workflows/cli-contract.yml` | Installs the latest npm release of opencode, codex, pi, kimi and mimo every Monday and runs `tests/check-cli-contract.py` against their real `--help` | One deduplicated `upstream-change` issue listing each flag that drifted |
+| `.github/workflows/upstream-watch.md` | [GitHub Agentic Workflow](https://github.com/github/gh-aw): Claude reads each source in `.github/upstream-sources.yml`, checks for broken links and reads changelogs since the verified version | Up to 5 evidenced issues (Breaking / Safety / Improvement / Spec) via `safe-outputs`; the agent itself has read-only permissions |
+
+Run the contract check locally against whatever CLIs you have installed:
+
+```bash
+python3 tests/check-cli-contract.py            # add --only codex,kimi to narrow it
+```
+
+One-time setup for the agentic workflow (it is Markdown, compiled to a lock file):
+
+```bash
+gh extension install github/gh-aw
+gh aw compile                                   # writes .github/workflows/upstream-watch.lock.yml — commit it
+gh secret set ANTHROPIC_API_KEY                 # engine: claude
+gh label create upstream-change --color D93F0B  # safe-outputs cannot create labels
+```
+
 ---
 
 ## License
@@ -259,7 +303,7 @@ MIT
 
 ## Launch safety and compatibility
 
-`helpers/scripts/delegate.sh` omits automatic permission-bypass flags and refuses
+The launcher (`delegate.sh`) omits automatic permission-bypass flags and refuses
 to launch if a verified git worktree cannot be created or reused. Codex uses the
 `workspace-write` sandbox. A runtime may still refuse an operation or wait for
 an approval in background mode; inspect its log rather than enabling bypasses
@@ -271,16 +315,20 @@ Two independent, per-launch opt-ins are available:
 
 ```bash
 # Accept edits in the original project if no worktree can be created.
-DELEGATE_ALLOW_UNISOLATED=1 bash helpers/scripts/delegate.sh pi TASK-1 1800
+DELEGATE_ALLOW_UNISOLATED=1 bash "$DELEGATE_SH" pi TASK-1 1800
 
 # Explicitly accept runtime permission bypass in a controlled environment.
-DELEGATE_ALLOW_UNSAFE_FLAGS=1 bash helpers/scripts/delegate.sh pi TASK-1 1800
+DELEGATE_ALLOW_UNSAFE_FLAGS=1 bash "$DELEGATE_SH" pi TASK-1 1800
 ```
 
 Both variables accept only `0` (default) or `1`. The second enables supported
 OpenCode `--auto`/legacy skip-permissions, Pi `--approve`, MiMo skip-permissions,
 Hermes YOLO/hook acceptance, Kimi YOLO, Codex approval/sandbox bypass or Agy
 skip-permissions. Opt-in is never inferred from worktree availability or retry.
+Two runtimes cannot keep tool approvals at all: **pi** never prompts before running
+its tools, and **kimi-code ≥ 2** print mode (`-p`) is auto-permission. The launcher
+starts both with a stderr warning rather than refusing — for them the worktree is
+the only code isolation, so add an external sandbox when that matters.
 Git worktrees separate code edits; **they are not an OS security boundary**.
 They share repository metadata and do not constrain processes, secrets, network
 access or host filesystem access. Use an independently configured sandbox when

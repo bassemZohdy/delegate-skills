@@ -2,6 +2,15 @@
 # Mock pi runtime for testing
 set -euo pipefail
 
+# Feature detection: answer --help instantly, before recording an invocation.
+if [ "${1:-}" = "--help" ]; then
+  echo "pi - mock"
+  echo "  --continue, -c   Continue previous session"
+  echo "  --model <id>     Model"
+  [ "${MOCK_PI_HAS_APPROVE:-1}" = 1 ] && echo "  --approve, -a    Trust project-local files for this run"
+  exit 0
+fi
+
 : "${MOCK_OUT_DIR:?MOCK_OUT_DIR not set}"
 mkdir -p "$MOCK_OUT_DIR"
 
@@ -20,7 +29,7 @@ START_TIME=$(date +%s)
 
 while true; do
   date +%s > "$MOCK_OUT_DIR/pi.heartbeat"
-  sleep 0.2
+  sleep 0.2 || true   # a TERM aimed at this child must not trip errexit before the TERM trap runs
 
   if [ "$MOCK_HANG" = "1" ]; then
     continue

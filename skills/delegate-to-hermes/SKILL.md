@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and hermes on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.3.1
+  version: 1.4.0
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -53,12 +53,14 @@ hermes chat --help 2>&1 | grep -E "worktree|accept-hooks|quiet|yolo"
 # --worktree  → built-in worktree isolation (we manage our own; do NOT pass this)
 # --accept-hooks → opt-in automatic hook approval
 # --yolo     → auto-approve all actions
-# -Q / --quiet → suppress interactive output (explicit opt-in only)
+# -Q / --quiet → programmatic mode: no banner/spinner, final response only (always used)
+# --continue [NAME] / -c → resume the most recent session (scoped to the cwd's workspace)
+# --reasoning LEVEL → none|minimal|low|medium|high|xhigh|max|ultra (only if asked)
 ```
 
 ### Safety defaults
 
-Prefer the tested launcher (`scripts/delegate.sh` when installed in the project).
+Prefer the bundled launcher (`$DELEGATE_SH`, resolved at the top of `workflow.md`).
 For a manual launch, first verify a positive `TASK-N` identifier, real delegation
 directories/state files without symlinks, and that the worktree belongs to this
 repository and the expected runtime/task branch. Refuse an unrelated directory.
@@ -75,6 +77,16 @@ Never silently fall back to the project root. If isolation fails, stop unless
 the operator explicitly set `DELEGATE_ALLOW_UNISOLATED=1` for this launch.
 
 ### Launch
+
+**Preferred — the bundled launcher** (`$DELEGATE_SH`, resolved at the top of [`workflow.md`](workflow.md)):
+
+```bash
+bash "$DELEGATE_SH" hermes TASK-N "$TIMEOUT_SECS"     # append --model "<id>" only if the user asked for a model
+```
+
+It verifies (or creates) the worktree, applies exactly the flags described in this file, records the real PID, exit code and a PID-reuse fingerprint, and arms a watchdog that cancels itself when the agent exits. Relay its `PID=`, `LOG=` and `WORK_DIR=` lines to the user. Use the manual block below only when no launcher is available.
+
+**Manual fallback:**
 
 ```bash
 PROJECT_ROOT="$(pwd)"
@@ -121,13 +133,28 @@ echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 
 Tell the user: task ID, working directory (`$WORK_DIR`), timeout deadline.
 
-### Retry (Step 5 Case 2)
+### Retry (Step 5 Cases 2–4)
 
-When self-healing retries with `--continue` (PROJECT_ROOT and WORK_DIR already set from launch):
+With the launcher (it never resets the retry counter and rotates the old log to `TASK-N.log.prev`):
 ```bash
+bash "$DELEGATE_SH" stop TASK-N                              # no-op if it already exited
+bash "$DELEGATE_SH" hermes TASK-N "$TIMEOUT_SECS" --continue   # resumes the previous session in the worktree
+```
+
+Manual fallback (reuse the variables from the initial launch):
+```bash
+# The previous attempt must already be stopped (Step 5 Case 2). Cancel its
+# watchdog, keep its log for diagnosis, then relaunch and re-arm.
+kill "$(cat "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid" 2>/dev/null)" 2>/dev/null
+mv -f "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" "$PROJECT_ROOT/.delegate/tasks/TASK-N.log.prev" 2>/dev/null
 cd "$WORK_DIR" || exit 1
 nohup hermes chat \
   -q "Continue the task from where you left off. Task file: $TASK_FILE" \
   --continue -Q ${UNSAFE_ARGS[@]+"${UNSAFE_ARGS[@]}"} \
   > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
+TASK_PID=$!
+echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
+nohup bash -c 'sleep "$1"; kill -TERM "$2" 2>/dev/null; sleep 30; kill -KILL "$2" 2>/dev/null' \
+  _ "$TIMEOUT_SECS" "$TASK_PID" > /dev/null 2>&1 &
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```

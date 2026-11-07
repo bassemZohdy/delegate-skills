@@ -1,0 +1,107 @@
+name: CLI contract (upstream drift)
+# Installs the latest published agent CLIs and checks that every flag
+# helpers/scripts/delegate.sh passes still appears in their --help
+# (tests/check-cli-contract.py, driven by .github/upstream-sources.yml).
+# Scheduled drift opens or updates ONE deduplicated issue.
+#
+# The two jobs are split on purpose: `check` runs third-party npm install
+# scripts and therefore gets a read-only token; `report` holds issues:write
+# and runs no third-party code.
+on:
+  schedule:
+    - cron: '17 6 * * 1'   # Mondays 06:17 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/upstream-sources.yml
+      - .github/workflows/cli-contract.yml
+      - tests/check-cli-contract.py
+
+permissions: {}
+
+concurrency:
+  group: cli-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      exit: ${{ steps.contract.outputs.exit }}
+      report: ${{ steps.contract.outputs.report }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        id: python
+        with:
+          python-version: '3.13'
+      - name: Install test dependencies
+        run: '"${{ steps.python.outputs.python-path }}" -m pip install -r tests/requirements.txt'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'   # runner-writable global prefix for npm install -g
+      - name: Install latest agent CLIs from npm
+        # hermes and agy have no npm package; they are reported as "not installed".
+        # One failed install must not hide the others — it surfaces as MISSING.
+        run: |
+          for pkg in opencode-ai @openai/codex @earendil-works/pi-coding-agent @moonshot-ai/kimi-code @mimo-ai/cli; do
+            npm install -g "$pkg@latest" || echo "::warning::npm install failed for $pkg"
+          done
+      - name: Check CLI contract
+        id: contract
+        run: |
+          set +e
+          "${{ steps.python.outputs.python-path }}" tests/check-cli-contract.py \
+            --only opencode,codex,pi,kimi,mimo --require-installed > report.md
+          code=$?
+          set -e
+          {
+            echo '### Run'
+            echo
+            echo "[${GITHUB_WORKFLOW} #${GITHUB_RUN_NUMBER}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+          } >> report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          delim="EOF_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+          {
+            echo "exit=$code"
+            echo "report<<$delim"
+            cat report.md
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+      - name: Fail on drift
+        if: steps.contract.outputs.exit != '0'
+        run: |
+          echo "::error::Agent CLI contract drift (exit ${{ steps.contract.outputs.exit }}) — see the job summary."
+          exit 1
+
+  report:
+    needs: check
+    if: always() && needs.check.outputs.exit != '' && needs.check.outputs.exit != '0' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: '[cli-contract] Agent CLI flags drifted from delegate.sh'
+      REPORT: ${{ needs.check.outputs.report }}
+    steps:
+      - name: Open or update the drift issue
+        run: |
+          printf '%s\n' "$REPORT" > body.md
+          gh label create upstream-change --color D93F0B \
+            --description 'Upstream agent CLI or spec changed' 2>/dev/null || true
+          num=$(gh issue list --state open --label upstream-change --search "in:title \"$TITLE\"" \
+                  --json number,title --jq ".[] | select(.title == env.TITLE) | .number" | head -1)
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body-file body.md
+            echo "Updated issue #$num"
+          else
+            gh issue create --title "$TITLE" --label upstream-change --body-file body.md
+          fi

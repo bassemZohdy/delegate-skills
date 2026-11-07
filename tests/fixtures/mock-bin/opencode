@@ -17,6 +17,8 @@ opencode run — Execute tasks with opencode
 Options:
 --dir <path>     Working directory
 --file <path>    Attach a file
+-c, --continue   Continue the last session
+-m, --model      Model to use
 EOF
   if [ "${MOCK_OPENCODE_LEGACY:-0}" = 1 ]; then
     echo "--dangerously-skip-permissions Skip approvals"
@@ -44,7 +46,7 @@ START_TIME=$(date +%s)
 
 while true; do
   date +%s > "$MOCK_OUT_DIR/opencode.heartbeat"
-  sleep 0.2
+  sleep 0.2 || true   # a TERM aimed at this child must not trip errexit before the TERM trap runs
 
   if [ "$MOCK_HANG" = "1" ]; then
     continue
@@ -61,3 +63,8 @@ done
 # Normal completion
 echo "DONE" > "$MOCK_OUT_DIR/opencode.status"
 echo "Mock opencode completed successfully"
+# Optional failure modes for status classification tests.
+if [ "${MOCK_VERBOSE:-0}" = 1 ]; then
+  i=0; while [ "$i" -lt 12 ]; do echo "mock opencode verbose output line $i ................................"; i=$((i+1)); done
+fi
+exit "${MOCK_EXIT:-0}"

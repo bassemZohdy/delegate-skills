@@ -5,7 +5,7 @@ license: MIT
 compatibility: "Requires git, bash, and at least one of: oh-my-opencode, opencode, pi, mimo, hermes, kimi, codex, or agy on PATH."
 metadata:
   author: Bassem Zohdy
-  version: 1.3.1
+  version: 1.4.0
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -32,7 +32,7 @@ Before proceeding: if `workflow.md` does not exist in this same folder, the skil
 Run a single scan across all supported binaries:
 
 ```bash
-for bin in oh-my-opencode opencode pi mimo hermes kimi codex agy; do
+for bin in oh-my-opencode oh-my-openagent opencode pi mimo hermes kimi codex agy; do
   command -v "$bin" &>/dev/null && echo "$bin"
 done
 ```
@@ -43,7 +43,7 @@ This prints every binary that is on PATH, in priority order.
 
 | Priority | Binary | Notes |
 |----------|--------|-------|
-| 1 | `oh-my-opencode` | Preferred opencode variant — use `omo` launch path |
+| 1 | `oh-my-opencode` / `oh-my-openagent` | opencode with the oh-my-opencode plugin — label `omo`, launched through `opencode` |
 | 2 | `opencode` | Standard opencode |
 | 3 | `pi` | |
 | 4 | `mimo` | |
@@ -60,10 +60,10 @@ Take the **first hit** from the list above. Tell the user which runtime was sele
 {
   "error": "missing_runtime",
   "message": "No supported agent CLI found on PATH.",
-  "checked": ["oh-my-opencode", "opencode", "pi", "mimo", "hermes", "kimi", "codex", "agy"],
+  "checked": ["oh-my-opencode", "oh-my-openagent", "opencode", "pi", "mimo", "hermes", "kimi", "codex", "agy"],
   "install_options": [
     "opencode  →  npm install -g opencode-ai",
-    "pi        →  bun install -g @earendil-works/pi-coding-agent",
+    "pi        →  npm install -g @earendil-works/pi-coding-agent",
     "mimo      →  npm install -g @mimo-ai/cli",
     "codex     →  npm install -g @openai/codex",
     "hermes    →  see Hermes Agent documentation",
@@ -82,17 +82,19 @@ Only if the user explicitly requested a model — validate against the chosen ru
 
 - **oh-my-opencode / opencode**: `opencode models 2>&1 | grep -i "<model>"`
 - **pi**: `pi --list-models 2>&1 | grep -i "<model>"`
-- **mimo**: check mimo docs / config
-- **hermes**: check hermes docs / config — no CLI list command
-- **kimi**: check kimi docs / config
-- **codex**: uses OpenAI model names (`o3`, `o4-mini`, `gpt-4o`) — no list command, errors on start if wrong
-- **agy**: model selection is config-only, cannot be passed via CLI
+- **mimo**: `mimo models 2>&1 | grep -i "<model>"`
+- **hermes**: no list command — check hermes config; a wrong name fails at startup (Case 1)
+- **kimi**: no list command — model aliases come from kimi's `config.toml`; a wrong name fails at startup (Case 1)
+- **codex**: no list command — the name configured for its provider; a wrong name fails at startup (Case 1)
+- **agy**: `agy models 2>&1 | grep -i "<model>"`
+
+Pass the verified ID to the launcher as `--model "<id>"`.
 
 If no model was requested, omit the model flag entirely for all runtimes.
 
 ### Safety defaults
 
-Prefer the tested launcher (`scripts/delegate.sh` when installed in the project).
+Prefer the bundled launcher (`$DELEGATE_SH`, resolved at the top of `workflow.md`).
 For a manual launch, first verify a positive `TASK-N` identifier, real delegation
 directories/state files without symlinks, and that the worktree belongs to this
 repository and the expected runtime/task branch. Refuse an unrelated directory.
@@ -112,15 +114,13 @@ the operator explicitly set `DELEGATE_ALLOW_UNISOLATED=1` for this launch.
 
 Use the launch pattern for the chosen runtime. Two equivalent paths:
 
-1. **Preferred — use the shared launcher, if present** (encapsulates worktree reuse, the right flags per runtime, PID/retries files, and the watchdog for all eight runtimes). Check it exists before using it — it's an optional manual copy per `docs/install.md`, not guaranteed to be in every project:
+1. **Preferred — the bundled launcher** (`$DELEGATE_SH`, resolved at the top of [`workflow.md`](workflow.md); this skill ships its own copy at `scripts/delegate.sh`, so it is always available). It encapsulates worktree verification, the right flags per runtime, PID/retries files, and a self-cancelling watchdog for all seven runtime binaries:
    ```bash
-   if [ -f scripts/delegate.sh ]; then
-     bash scripts/delegate.sh <selected-runtime> TASK-N $TIMEOUT_SECS
-   fi
+   bash "$DELEGATE_SH" <selected-runtime> TASK-N "$TIMEOUT_SECS"   # append --model "<id>" only if requested
    ```
-   Where `<selected-runtime>` is the binary chosen above (`opencode`, `pi`, `mimo`, `hermes`, `kimi`, `codex`, or `agy`). For `oh-my-opencode`, use path 2 below — `delegate.sh` targets the `opencode` binary specifically. If `scripts/delegate.sh` is absent, fall back to path 2.
+   Where `<selected-runtime>` is the binary chosen above (`opencode`, `pi`, `mimo`, `hermes`, `kimi`, `codex`, or `agy`). For `oh-my-opencode` / `oh-my-openagent`: it is an opencode plugin, so launch `opencode` through the launcher (the plugin still loads) and record `agent: omo` in TODO.md — the worktree branch stays `opencode/TASK-N`, which is what the launcher verifies; only if you need the `oh-my-opencode run` entry point itself (it waits for the session's todos and sub-sessions before exiting), use path 2.
 
-2. **Direct launch** — copy the exact Launch block from the chosen runtime's own skill: [`delegate-to-<runtime>/SKILL.md`](delegate-to-opencode/SKILL.md) (opencode/omo), [`delegate-to-pi`](delegate-to-pi/SKILL.md), [`delegate-to-mimo`](delegate-to-mimo/SKILL.md), [`delegate-to-hermes`](delegate-to-hermes/SKILL.md), [`delegate-to-kimi`](delegate-to-kimi/SKILL.md), [`delegate-to-codex`](delegate-to-codex/SKILL.md), [`delegate-to-agy`](delegate-to-agy/SKILL.md).
+2. **Direct launch** — copy the exact Launch block from the chosen runtime's own skill, if it is installed alongside this one (sibling folders under the same skills root): `../delegate-to-opencode/SKILL.md` (opencode/omo), `../delegate-to-pi/SKILL.md`, `../delegate-to-mimo/SKILL.md`, `../delegate-to-hermes/SKILL.md`, `../delegate-to-kimi/SKILL.md`, `../delegate-to-codex/SKILL.md`, `../delegate-to-agy/SKILL.md`. A single-skill install may not have them — then path 1 is the only supported launch.
 
    The per-runtime skill is the **single source of truth** for each runtime's flags and handoff-delivery mechanism (`--file`, `@path`, stdin, or absolute-path-in-prompt). Do not paraphrase it — copy the block verbatim. This avoids the drift that occurs when launch commands are maintained in two places.
 
@@ -128,7 +128,7 @@ Every per-runtime launch block shares the same mechanical skeleton (shown once h
 
 ```bash
 # Common skeleton — the runtime-specific nohup line comes from the per-runtime skill.
-PROJECT_ROOT="$(pwd)"                       # capture BEFORE any cd (pi/hermes/kimi/agy cd into the worktree)
+PROJECT_ROOT="$(pwd)"                       # capture BEFORE any cd (most runtimes cd into the worktree)
 WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
 if [ ! -d "$WORK_DIR" ]; then
   [ "${DELEGATE_ALLOW_UNISOLATED:-0}" = 1 ] || { echo "ERROR: worktree missing; refusing unisolated launch" >&2; exit 1; }
@@ -158,10 +158,15 @@ nohup bash -c 'sleep "$1"; kill -TERM "$2" 2>/dev/null; sleep 30; kill -KILL "$2
 echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```
 
-Use the runtime label in TODO.md and on the worktree branch name: `omo` for oh-my-opencode, otherwise the binary name (`opencode`, `pi`, `mimo`, `hermes`, `kimi`, `codex`, `agy`).
+Name the worktree branch after the binary that runs the task (`opencode/TASK-N`, `pi/TASK-N`, …) — never after the `omo` label: an oh-my-opencode task runs through `opencode`, and the launcher refuses a worktree on any other branch. `omo` goes only in the TODO.md `agent:` field.
 
 Tell the user: selected runtime, task ID, working directory, log path, timeout deadline.
 
-### Retry (Step 5 Case 2)
+### Retry (Step 5 Cases 2–4)
 
-Use the `--continue` pattern from the selected runtime's own `delegate-to-<runtime>/SKILL.md`. The chosen runtime does not change on retry.
+The chosen runtime does not change on retry. With the launcher:
+```bash
+bash "$DELEGATE_SH" stop TASK-N                                       # no-op if it already exited
+bash "$DELEGATE_SH" <selected-runtime> TASK-N "$TIMEOUT_SECS" --continue
+```
+Otherwise use the Retry block from the selected runtime's own `../delegate-to-<runtime>/SKILL.md`.

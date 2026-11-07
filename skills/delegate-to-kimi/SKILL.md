@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and kimi on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.3.1
+  version: 1.4.0
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -51,15 +51,23 @@ If no model was requested, omit `-m` entirely.
 
 ```bash
 kimi --help 2>&1 | grep -E "yolo|auto|continue|model"
-# -y / --yolo  → auto-approve all actions (explicit opt-in only)
-# --auto       → start in auto permission mode
-# -C / --continue → continue previous session for cwd
-# -m / --model → model override
+# -y / --yolo     → auto-approve regular tool calls (explicit opt-in only)
+# --auto          → fully autonomous permission mode (also a bypass — opt-in only)
+# -c / --continue → continue the previous session for the working directory
+#                   (lowercase -c: there is no -C flag)
+# -m / --model    → model alias override
 ```
+
+**kimi-code ≥ 2.0 changed print mode:** `-p/--prompt` is auto-permission mode
+(it never asks; static deny rules still apply) and is **rejected** in
+combination with `-y/--yolo`, `--auto` or `--plan`. So on 2.x never pass `-y`
+with `-p`: `DELEGATE_ALLOW_UNSAFE_FLAGS` adds nothing, and the worktree is the
+only code isolation. The bundled launcher detects the major version with
+`kimi --version` and does this for you; the manual block below does the same.
 
 ### Safety defaults
 
-Prefer the tested launcher (`scripts/delegate.sh` when installed in the project).
+Prefer the bundled launcher (`$DELEGATE_SH`, resolved at the top of `workflow.md`).
 For a manual launch, first verify a positive `TASK-N` identifier, real delegation
 directories/state files without symlinks, and that the worktree belongs to this
 repository and the expected runtime/task branch. Refuse an unrelated directory.
@@ -77,6 +85,16 @@ the operator explicitly set `DELEGATE_ALLOW_UNISOLATED=1` for this launch.
 
 ### Launch
 
+**Preferred — the bundled launcher** (`$DELEGATE_SH`, resolved at the top of [`workflow.md`](workflow.md)):
+
+```bash
+bash "$DELEGATE_SH" kimi TASK-N "$TIMEOUT_SECS"     # append --model "<id>" only if the user asked for a model
+```
+
+It verifies (or creates) the worktree, applies exactly the flags described in this file, records the real PID, exit code and a PID-reuse fingerprint, and arms a watchdog that cancels itself when the agent exits. Relay its `PID=`, `LOG=` and `WORK_DIR=` lines to the user. Use the manual block below only when no launcher is available.
+
+**Manual fallback:**
+
 ```bash
 PROJECT_ROOT="$(pwd)"
 WORK_DIR="$PROJECT_ROOT/.delegate/worktrees/TASK-N"
@@ -89,7 +107,12 @@ fi
 TASK_FILE="$PROJECT_ROOT/.delegate/tasks/TASK-N.md"
 TIMEOUT_SECS=<seconds from timeout tier>
 UNSAFE_ARGS=()
-[ "${DELEGATE_ALLOW_UNSAFE_FLAGS:-0}" = 1 ] && UNSAFE_ARGS+=(-y)
+KIMI_MAJOR=$(kimi --version 2>/dev/null | grep -oE '[0-9]+' | head -1)
+if [ "${KIMI_MAJOR:-0}" -ge 2 ] 2>/dev/null; then
+  echo "WARN: kimi >= 2 print mode never asks for approval; the worktree is the only isolation." >&2
+else
+  [ "${DELEGATE_ALLOW_UNSAFE_FLAGS:-0}" = 1 ] && UNSAFE_ARGS+=(-y)   # 2.x rejects -y with -p
+fi
 
 # Add -m "<model>" only if user specified one
 cd "$WORK_DIR" || exit 1
@@ -122,13 +145,28 @@ echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 
 Tell the user: task ID, working directory (`$WORK_DIR`), timeout deadline.
 
-### Retry (Step 5 Case 2)
+### Retry (Step 5 Cases 2–4)
 
-When self-healing retries with `--continue` (PROJECT_ROOT and WORK_DIR already set from launch):
+With the launcher (it never resets the retry counter and rotates the old log to `TASK-N.log.prev`):
 ```bash
+bash "$DELEGATE_SH" stop TASK-N                              # no-op if it already exited
+bash "$DELEGATE_SH" kimi TASK-N "$TIMEOUT_SECS" --continue   # resumes the previous session in the worktree
+```
+
+Manual fallback (reuse the variables from the initial launch):
+```bash
+# The previous attempt must already be stopped (Step 5 Case 2). Cancel its
+# watchdog, keep its log for diagnosis, then relaunch and re-arm.
+kill "$(cat "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid" 2>/dev/null)" 2>/dev/null
+mv -f "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" "$PROJECT_ROOT/.delegate/tasks/TASK-N.log.prev" 2>/dev/null
 cd "$WORK_DIR" || exit 1
 nohup kimi \
   -p "Continue the task from where you left off. Task file: $TASK_FILE" \
-  -C ${UNSAFE_ARGS[@]+"${UNSAFE_ARGS[@]}"} \
+  -c ${UNSAFE_ARGS[@]+"${UNSAFE_ARGS[@]}"} \
   > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
+TASK_PID=$!
+echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
+nohup bash -c 'sleep "$1"; kill -TERM "$2" 2>/dev/null; sleep 30; kill -KILL "$2" 2>/dev/null' \
+  _ "$TIMEOUT_SECS" "$TASK_PID" > /dev/null 2>&1 &
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```

@@ -481,9 +481,13 @@ yaml.safe_load(parts[1])
       grep -qE 'PROJECT_ROOT.*=.*\$\(pwd\)|PROJECT_ROOT="\$\(pwd\)"' "$SKILL_FILE" \
         && pass "skills/$skill/SKILL.md captures PROJECT_ROOT before cd" \
         || fail "skills/$skill/SKILL.md missing PROJECT_ROOT capture"
-      grep -qE -- '--continue| -C ' "$SKILL_FILE" \
-        && pass "skills/$skill/SKILL.md retry uses --continue / -C" \
-        || fail "skills/$skill/SKILL.md retry missing --continue / -C"
+      # kimi's continue flag is lowercase -c; `-C` does not exist in kimi-code.
+      awk '/^### Retry/,0' "$SKILL_FILE" | grep -qE -- '^[[:space:]]+-c ' \
+        && pass "skills/$skill/SKILL.md retry uses -c (continue)" \
+        || fail "skills/$skill/SKILL.md retry missing -c (continue)"
+      awk '/^### Retry/,0' "$SKILL_FILE" | grep -qE -- '^[[:space:]]+-C ' \
+        && fail "skills/$skill/SKILL.md retry uses nonexistent kimi flag -C" \
+        || pass "skills/$skill/SKILL.md retry does not use nonexistent -C"
       ;;
 
     delegate-to-codex)
@@ -656,6 +660,27 @@ grep -q "CLI differences\|Run command" "$PROJECT_ROOT/AGENTS.md" \
   && pass "AGENTS.md has CLI differences table" \
   || fail "AGENTS.md missing CLI differences table"
 
+# README runtime links must not point at domains that do not resolve (found by
+# curl in the 2026-11 review: hermes.agent, earendil.works; agy.dev, mimo.ai and
+# kimi.ai only redirect to unrelated pages). Real URLs live in upstream-sources.yml.
+if grep -qE 'https://(hermes\.agent|earendil\.works|agy\.dev|mimo\.ai|kimi\.ai)' "$PROJECT_ROOT/README.md"; then
+  fail "README.md links a runtime homepage that does not resolve (use the URLs in .github/upstream-sources.yml)"
+else
+  pass "README.md runtime links avoid the known-dead domains"
+fi
+# pi is on npm: one install command everywhere (bun also works with npm packages).
+if grep -rqE 'bun install -g @earendil-works' "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/docs" "$PROJECT_ROOT/skills" "$PROJECT_ROOT/helpers"; then
+  fail "a file still documents 'bun install -g' for pi (the package is installed with npm install -g)"
+else
+  pass "pi install command is npm install -g everywhere"
+fi
+# Skills ship their own launcher; "when installed in the project" was the pre-1.4 wording.
+if grep -rq 'when installed in the project' "$PROJECT_ROOT/skills"; then
+  fail "a SKILL.md still says to prefer the launcher 'when installed in the project' (it is bundled)"
+else
+  pass "SKILL.md files refer to the bundled launcher (\$DELEGATE_SH)"
+fi
+
 # ─── Shell script shebangs ────────────────────────────────────────────────────
 
 for script in tests/run-tests.sh tests/test-structure.sh helpers/scripts/delegate.sh; do
@@ -674,17 +699,34 @@ done
 echo ""
 echo "  ─── semantic regression checks ───"
 
-# Regression: omo (oh-my-opencode) launch block must set the working directory.
-# Bug #1 — omo ran in the project root, ignoring the worktree, because neither
-# --dir nor a cd fallback was present. The canonical omo launch lives in
-# delegate-to-opencode (delegate-to-any references it rather than duplicating),
-# so we assert against the canonical location.
+# Regression: the omo (oh-my-opencode) manual block must set the working
+# directory and may only use flags the real CLI has. Bug #1 — omo ran in the
+# project root because neither a directory flag nor a cd was present; later
+# the block carried flags that do not exist at all (--dir, --file, --yes).
+# Verified against oh-my-openagent 5.1.62 docs/reference/cli.md: `run` takes
+# -d/--directory, -m/--model and --session-id; no --file/--continue/--yes.
+# The canonical omo launch lives in delegate-to-opencode (delegate-to-any
+# references it rather than duplicating), so we assert against that file.
 F="$PROJECT_ROOT/skills/delegate-to-opencode/SKILL.md"
-if awk '/oh-my-opencode run/{flag=1} flag{print} /--yes \\/{if(flag)exit}' "$F" \
-     | grep -qE -- '--dir|\bcd "\$WORK_DIR"'; then
-  pass "skills/delegate-to-opencode/SKILL.md omo block sets working dir (--dir or cd)"
+omo_code=$(awk '/^\*\*`omo`/{sec=1} /^\*\*`none`/{sec=0} sec && /^```bash/{code=1; next} sec && /^```/{code=0} sec && code' "$F")
+if echo "$omo_code" | grep -q -- '--directory "\$WORK_DIR"' && echo "$omo_code" | grep -q 'cd "\$WORK_DIR"'; then
+  pass "skills/delegate-to-opencode/SKILL.md omo block sets working dir (--directory + cd)"
 else
   fail "skills/delegate-to-opencode/SKILL.md omo block does NOT set working dir (regression of bug #1)"
+fi
+if echo "$omo_code" | grep -qE -- '(^|[[:space:]])(--yes|--file|--dir|--continue)([[:space:]]|$)'; then
+  fail "skills/delegate-to-opencode/SKILL.md omo block uses flags 'oh-my-opencode run' does not have (--yes/--file/--dir/--continue)"
+else
+  pass "skills/delegate-to-opencode/SKILL.md omo block uses only real oh-my-opencode flags"
+fi
+
+# The branch name is always the launcher runtime's: an omo task runs through
+# the opencode binary and the launcher verifies branch opencode/TASK-N, so no
+# distributed file may tell the model to create omo/TASK-N.
+if grep -rqE 'omo/TASK' "$PROJECT_ROOT/skills" "$PROJECT_ROOT/helpers" "$PROJECT_ROOT/docs" "$PROJECT_ROOT/README.md"; then
+  fail "a distributed file names the worktree branch omo/TASK-N (the launcher requires opencode/TASK-N)"
+else
+  pass "no distributed file names the worktree branch omo/TASK-N"
 fi
 
 # Regression: cd-based runtimes in delegate.sh must capture the real nohup PID,
@@ -766,6 +808,87 @@ for skill in "${SKILLS[@]}"; do
     fail "skills/$skill/SKILL.md defines WORK_DIR but never uses it (count=$count)"
   else
     pass "skills/$skill/SKILL.md uses WORK_DIR (count=$count refs)"
+  fi
+done
+
+# ─── Bundled launcher (self-contained skills) ─────────────────────────────────
+# Every skill ships the tested launcher so the preferred path works from a
+# single-skill install, without copying anything into the user's project.
+for skill in "${SKILLS[@]}"; do
+  B="$PROJECT_ROOT/skills/$skill/scripts/delegate.sh"
+  if [ -f "$B" ] && cmp -s "$B" "$DELEGATE_SH"; then
+    pass "skills/$skill/scripts/delegate.sh bundled and identical to helpers/scripts/delegate.sh"
+  else
+    fail "skills/$skill/scripts/delegate.sh missing or stale (run helpers/scripts/sync-skills.sh)"
+  fi
+  grep -q 'bash "\$DELEGATE_SH" ' "$PROJECT_ROOT/skills/$skill/SKILL.md" \
+    && pass "skills/$skill/SKILL.md launches through \$DELEGATE_SH" \
+    || fail "skills/$skill/SKILL.md does not use the bundled launcher"
+  grep -q -- '--continue' "$PROJECT_ROOT/skills/$skill/SKILL.md" \
+    && pass "skills/$skill/SKILL.md documents launcher --continue retry" \
+    || fail "skills/$skill/SKILL.md missing launcher --continue retry"
+done
+
+# Retry blocks must record the new PID and re-arm the watchdog; otherwise the
+# next poll checks the dead PID of the previous attempt.
+for rt in opencode pi mimo hermes kimi codex agy; do
+  F="$PROJECT_ROOT/skills/delegate-to-$rt/SKILL.md"
+  retry=$(awk '/^### Retry/,0' "$F")
+  echo "$retry" | grep -q 'TASK-N.pid' && echo "$retry" | grep -q 'watchdog.pid' \
+    && pass "delegate-to-$rt manual retry records PID and re-arms watchdog" \
+    || fail "delegate-to-$rt manual retry does not record PID / re-arm watchdog"
+done
+
+# codex `exec resume` rejects -C/--cd and -s/--sandbox (verified against
+# codex-cli 0.167 `codex exec resume --help`).
+if awk '/^### Retry/,0' "$PROJECT_ROOT/skills/delegate-to-codex/SKILL.md" | grep -E 'resume --last' -A3 | grep -qE -- ' -C | -s |CODEX_SECURITY_ARGS'; then
+  fail "delegate-to-codex retry passes -C/-s to 'codex exec resume' (unsupported)"
+else
+  pass "delegate-to-codex retry avoids -C/-s on 'codex exec resume'"
+fi
+
+# Distributed files must not point at repository-only paths that a
+# single-skill install does not have.
+if grep -nE '\(?`?(docs|helpers)/[A-Za-z]' "$WORKFLOW" | grep -v 'helpers/scripts/sync' ; then
+  fail "workflow.md references repository-only docs/ or helpers/ paths"
+else
+  pass "workflow.md has no repository-only path references"
+fi
+
+# delegate-to-any must not contain markdown links that resolve inside its own
+# folder to sibling skills (the bug: `delegate-to-pi/SKILL.md` relative link).
+if grep -qE '\]\(delegate-to-[a-z]+/SKILL\.md\)' "$PROJECT_ROOT/skills/delegate-to-any/SKILL.md"; then
+  fail "delegate-to-any has broken relative links to sibling skills"
+else
+  pass "delegate-to-any has no broken sibling-skill links"
+fi
+
+# ─── Launcher version == skill version ────────────────────────────────────────
+# The workflow compares a project-pinned launcher with the bundled one via
+# `delegate.sh version`; that only means something if the number tracks the
+# skills it ships with.
+launcher_version=$(sed -n 's/^DELEGATE_VERSION="\([0-9.]*\)"$/\1/p' "$DELEGATE_SH")
+for f in "$PROJECT_ROOT"/skills/delegate-to-*/SKILL.md "$PROJECT_ROOT/helpers/hermes/delegate-tasks/SKILL.md"; do
+  v=$(sed -n 's/^[[:space:]]*version:[[:space:]]*"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}[[:space:]]*$/\1/p' "$f" | head -1)
+  rel=${f#"$PROJECT_ROOT"/}
+  [ -n "$launcher_version" ] && [ "$v" = "$launcher_version" ] \
+    && pass "$rel version $v matches DELEGATE_VERSION" \
+    || fail "$rel version '$v' differs from DELEGATE_VERSION '$launcher_version' in helpers/scripts/delegate.sh"
+done
+
+# ─── Hermes helper / generic prompt: full ledger fields, no first-launch --continue ──
+for f in helpers/hermes/delegate-tasks/SKILL.md helpers/adapters/generic-prompt.md; do
+  missing=""
+  for field in base_sha dirty_tree output_ref retries depends_on blocked_by "Active Form"; do
+    grep -q "$field" "$PROJECT_ROOT/$f" || missing="$missing $field"
+  done
+  [ -z "$missing" ] \
+    && pass "$f ledger/handoff templates carry the full workflow field set" \
+    || fail "$f templates are missing:$missing"
+  if grep -qi "so sessions don't collide" "$PROJECT_ROOT/$f"; then
+    fail "$f suggests --continue for a first launch (it resumes the previous session; retries only)"
+  else
+    pass "$f does not suggest --continue for a first launch"
   fi
 done
 

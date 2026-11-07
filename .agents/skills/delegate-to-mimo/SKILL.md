@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires git, bash, and mimo on PATH.
 metadata:
   author: Bassem Zohdy
-  version: 1.3.1
+  version: 1.4.0
   category: delegation
 disable-model-invocation: true
 argument-hint: "[--model <model-id>] <task description>"
@@ -50,8 +50,8 @@ If no model was requested, omit `-m` entirely — mimo uses its configured defau
 ```bash
 MIMO_HELP=$(mimo run --help 2>&1)
 echo "$MIMO_HELP" | grep -E "variant|thinking"
-# 'variant' present → may pass --variant <level> if appropriate
-# 'thinking' present → may pass --thinking <level> if appropriate
+# '--variant <level>' present → provider-specific reasoning effort (e.g. high, max, minimal)
+# '--thinking' is a boolean that only SHOWS thinking blocks — it is not an effort level
 
 # Also verify these flags exist — mimo may differ from opencode:
 MIMO_HAS_DIR=$(echo "$MIMO_HELP" | grep -c "\-\-dir" || true)
@@ -59,11 +59,11 @@ MIMO_HAS_SKIP=$(echo "$MIMO_HELP" | grep -c "skip-permissions" || true)
 MIMO_HAS_FILE=$(echo "$MIMO_HELP" | grep -c "\-\-file" || true)
 ```
 
-Build the launch command from only the flags that are confirmed present. If `--file` is absent, fall back to attaching the handoff path as a positional argument (`@path` or similar — check help output).
+Build the launch command from only the flags that are confirmed present. If `--file` is absent, reference the handoff by absolute path in the message instead (the agent reads it with its own tools). `--file` is an array option: keep it last so it cannot swallow anything after it.
 
 ### Safety defaults
 
-Prefer the tested launcher (`scripts/delegate.sh` when installed in the project).
+Prefer the bundled launcher (`$DELEGATE_SH`, resolved at the top of `workflow.md`).
 For a manual launch, first verify a positive `TASK-N` identifier, real delegation
 directories/state files without symlinks, and that the worktree belongs to this
 repository and the expected runtime/task branch. Refuse an unrelated directory.
@@ -80,6 +80,16 @@ Never silently fall back to the project root. If isolation fails, stop unless
 the operator explicitly set `DELEGATE_ALLOW_UNISOLATED=1` for this launch.
 
 ### Launch
+
+**Preferred — the bundled launcher** (`$DELEGATE_SH`, resolved at the top of [`workflow.md`](workflow.md)):
+
+```bash
+bash "$DELEGATE_SH" mimo TASK-N "$TIMEOUT_SECS"     # append --model "<id>" only if the user asked for a model
+```
+
+It verifies (or creates) the worktree, applies exactly the flags described in this file (help-detected per installed version), records the real PID, exit code and a PID-reuse fingerprint, and arms a watchdog that cancels itself when the agent exits. Relay its `PID=`, `LOG=` and `WORK_DIR=` lines to the user. Use the manual block below only when no launcher is available.
+
+**Manual fallback:**
 
 **Critical: never expand the handoff document into a shell variable.** Multi-line markdown with special characters (`#`, backticks, quotes, brackets) breaks positional argument parsing cross-platform. Attach the handoff file with `--file` and pass a short prompt as the message.
 
@@ -101,12 +111,20 @@ TIMEOUT_SECS=<seconds from timeout tier>
 # string like "--dir $WORK_DIR" word-splits on spaces in the path. The
 # ${arr[@]+...} expansion keeps an empty array safe under `set -u` on bash 3.2.
 MIMO_ARGS=()
-[ "$MIMO_HAS_FILE" -gt 0 ] && MIMO_ARGS+=(--file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md")
 [ "$MIMO_HAS_DIR" -gt 0 ] && MIMO_ARGS+=(--dir "$WORK_DIR")
 [ "${DELEGATE_ALLOW_UNSAFE_FLAGS:-0}" = 1 ] && [ "$MIMO_HAS_SKIP" -gt 0 ] && MIMO_ARGS+=(--dangerously-skip-permissions)
+MIMO_MSG="Execute the task described in the attached handoff document. Follow all instructions in it exactly."
+if [ "$MIMO_HAS_FILE" -gt 0 ]; then
+  MIMO_ARGS+=(--file "$PROJECT_ROOT/.delegate/tasks/TASK-N.md")   # array option: keep last
+else
+  MIMO_MSG="Read $PROJECT_ROOT/.delegate/tasks/TASK-N.md and execute the task described in it. Follow all instructions exactly."
+fi
 
+# Run inside the worktree even when --dir exists: the process cwd is what
+# contains relative writes. `cd` is its own statement so $! stays mimo's PID.
+cd "$WORK_DIR" || exit 1
 nohup mimo run \
-  "Execute the task described in the attached handoff document. Follow all instructions in it exactly." \
+  "$MIMO_MSG" \
   ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"} \
   > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
 
@@ -134,13 +152,29 @@ echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 
 Tell the user: task ID, working directory, timeout deadline.
 
-### Retry (Step 5 Case 2)
+### Retry (Step 5 Cases 2–4)
 
-When self-healing retries with `--continue` (reuse `$PROJECT_ROOT`, `$WORK_DIR`, and the `MIMO_ARGS` array from launch):
+With the launcher (it never resets the retry counter and rotates the old log to `TASK-N.log.prev`):
 ```bash
+bash "$DELEGATE_SH" stop TASK-N                              # no-op if it already exited
+bash "$DELEGATE_SH" mimo TASK-N "$TIMEOUT_SECS" --continue   # resumes the previous session in the worktree
+```
+
+Manual fallback (reuse the variables from the initial launch):
+```bash
+# The previous attempt must already be stopped (Step 5 Case 2). Cancel its
+# watchdog, keep its log for diagnosis, then relaunch and re-arm.
+kill "$(cat "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid" 2>/dev/null)" 2>/dev/null
+mv -f "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" "$PROJECT_ROOT/.delegate/tasks/TASK-N.log.prev" 2>/dev/null
+cd "$WORK_DIR" || exit 1
 nohup mimo run \
   "Continue the task from where you left off." \
   --continue \
   ${MIMO_ARGS[@]+"${MIMO_ARGS[@]}"} \
   > "$PROJECT_ROOT/.delegate/tasks/TASK-N.log" 2>&1 &
+TASK_PID=$!
+echo $TASK_PID > "$PROJECT_ROOT/.delegate/tasks/TASK-N.pid"
+nohup bash -c 'sleep "$1"; kill -TERM "$2" 2>/dev/null; sleep 30; kill -KILL "$2" 2>/dev/null' \
+  _ "$TIMEOUT_SECS" "$TASK_PID" > /dev/null 2>&1 &
+echo $! > "$PROJECT_ROOT/.delegate/tasks/TASK-N.watchdog.pid"
 ```

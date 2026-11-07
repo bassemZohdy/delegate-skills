@@ -12,6 +12,7 @@ mimo run — Execute tasks with mimo
 
 Options:
 --dangerously-skip-permissions   Skip prompts
+-c, --continue                   Continue the last session
 EOF
   [ "${MOCK_MIMO_HAS_DIR:-1}" = 1 ] && echo "--dir <path> Working directory"
   if [ "${MOCK_MIMO_HAS_FILE:-0}" = "1" ]; then
@@ -38,7 +39,7 @@ START_TIME=$(date +%s)
 
 while true; do
   date +%s > "$MOCK_OUT_DIR/mimo.heartbeat"
-  sleep 0.2
+  sleep 0.2 || true   # a TERM aimed at this child must not trip errexit before the TERM trap runs
 
   if [ "$MOCK_HANG" = "1" ]; then
     continue

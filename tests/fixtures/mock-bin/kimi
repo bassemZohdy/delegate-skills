@@ -2,6 +2,12 @@
 # Mock kimi runtime for testing
 set -euo pipefail
 
+# Version detection: kimi-code 2.x changed print-mode permission rules.
+if [ "${1:-}" = "--version" ] || [ "${1:-}" = "-V" ]; then
+  echo "${MOCK_KIMI_VERSION:-0.34.0}"
+  exit 0
+fi
+
 : "${MOCK_OUT_DIR:?MOCK_OUT_DIR not set}"
 mkdir -p "$MOCK_OUT_DIR"
 
@@ -20,7 +26,7 @@ START_TIME=$(date +%s)
 
 while true; do
   date +%s > "$MOCK_OUT_DIR/kimi.heartbeat"
-  sleep 0.2
+  sleep 0.2 || true   # a TERM aimed at this child must not trip errexit before the TERM trap runs
 
   if [ "$MOCK_HANG" = "1" ]; then
     continue
