@@ -58,6 +58,16 @@ agy 1.4.9).
   that do not exist in an installed skill; timeout tiers and merge commands are
   now inlined.
 
+### Review-backlog fixes (TASK-13 … TASK-26)
+
+- Timeout and `stop` kill the agent's whole descendant tree (deepest first), not just the launched PID — on Git Bash and stock macOS there is no process group, so wrappers/shims/workers survived a `TIMED_OUT`. Launch now fails instead of printing `PID=unknown`.
+- `omo` is a TODO.md label only: the branch is always `opencode/TASK-N` (the launcher refused `omo/TASK-N` worktrees). The oh-my-opencode manual block uses its real flags (`--directory`, `-m`, `--session-id`; no `--file`/`--dir`/`--yes`).
+- `status`: `STOPPED`/`TIMED_OUT` markers win without an exit code (a dead supervisor no longer reads as `LAUNCH_FAILED`); stall detection works in unisolated mode; relaunch after a hand-deleted worktree prunes the stale registration; portable mtime for the `next-id` stale lock (macOS).
+- New `delegate.sh cleanup TASK-N [--force]` (post-merge teardown that refuses while running or unmerged) and `delegate.sh version`; the workflow's `$DELEGATE_SH` resolver keeps the bundled launcher when a project-pinned copy is older.
+- pi now warns on every launch that its tools run unprompted (policy: warn and launch, like kimi >= 2).
+- Docs: working runtime links, current repo tree, `npm install -g` for pi everywhere, Hermes helper/generic prompt carry the full ledger field set.
+- CI: `spec` (agentskills.io reference validator on copies without the two Claude Code extension keys) and `lint` (shellcheck + actionlint) jobs.
+
 ### Added
 
 - `delegate.sh` is bundled into every skill folder as `scripts/delegate.sh`

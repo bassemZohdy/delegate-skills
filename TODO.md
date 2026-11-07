@@ -233,10 +233,11 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-19] CI: lint shell and workflow files (shellcheck, actionlint)
-- status: in_progress
+- status: completed
 - priority: P2
-- owner: claude-code/2026-11-07T10:00:00Z
-- outcome-so-far: `lint` job in test.yml (shellcheck -S warning with 5 documented exclusions, actionlint 1.7.7 via docker); supervisor `bash -n` in test_opencode_happy. Awaiting first CI run to confirm shellcheck is clean.
+- owner: (cleared)
+- reviewed: 2026-11-07T10:30:00Z
+- outcome: `lint` job (shellcheck 0.9 -S warning with 5 documented exclusions + actionlint 1.7.7) is green on CI after fixing 51 findings (SETSID array quoting, `cd ||` in tests, split export); supervisor `bash -n` test added
 - agent: claude-code / claude-sonnet-5-5
 - started: 2026-11-07T09:40:00Z
 - timeout: 600
@@ -257,10 +258,10 @@ bash tests/run-tests.sh
 A `lint` job in `test.yml` runs shellcheck over every `*.sh` (plus the mock-bin fixtures) and actionlint over `.github/workflows/*.yml`; findings fixed or explicitly disabled with a reason.
 
 ### Sub-tasks
-- [ ] Add a `lint` job (ubuntu) pinned by commit: `ludeeus/action-shellcheck` or `apt-get install shellcheck`, and `rhysd/actionlint`
-- [ ] Fix or justify every shellcheck finding in `helpers/scripts/*.sh`, `tests/*.sh`, `tests/fixtures/mock-bin/*`
-- [ ] Add `bash -n` of the generated supervisor to a behavior test (write it with a mock, then `bash -n TASK-N.supervisor.sh`)
-- [ ] README "Running tests": mention the lint job
+- [x] Add a `lint` job (ubuntu) pinned by commit: `ludeeus/action-shellcheck` or `apt-get install shellcheck`, and `rhysd/actionlint`
+- [x] Fix or justify every shellcheck finding in `helpers/scripts/*.sh`, `tests/*.sh`, `tests/fixtures/mock-bin/*`
+- [x] Add `bash -n` of the generated supervisor to a behavior test (write it with a mock, then `bash -n TASK-N.supervisor.sh`)
+- [x] README "Running tests": mention the lint job
 
 ### Verification
 ```bash
@@ -460,10 +461,11 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-25] Spec compliance: run `skills-ref validate` in CI and settle the non-spec frontmatter fields
-- status: in_progress
+- status: completed
 - priority: P3
-- owner: claude-code/2026-11-07T10:00:00Z
-- outcome-so-far: `spec` job in test.yml runs `skills-ref==0.1.1` on copies stripped of `disable-model-invocation`/`argument-hint` (skills-ref ALLOWED_FIELDS rejects them; they must stay top-level for Claude Code). Offline test pins the same rule. Awaiting first CI run.
+- owner: (cleared)
+- reviewed: 2026-11-07T10:30:00Z
+- outcome: `spec` job green on CI: skills-ref 0.1.1 (console script is `agentskills`) validates all 8 skills on copies stripped of `disable-model-invocation`/`argument-hint`; offline test pins the same rule
 - agent: claude-code / claude-sonnet-5-5
 - started: 2026-11-07T09:40:00Z
 - timeout: 600
@@ -484,10 +486,10 @@ All 8 skills carry `disable-model-invocation` and `argument-hint` (SKILL.md line
 `pip install` of skills-ref in a CI job, `skills-ref validate skills/delegate-to-*` green; either the fields moved under `metadata:` (if rejected) or the job documents that extensions are tolerated.
 
 ### Sub-tasks
-- [ ] Run `skills-ref validate` locally on one skill; record the result
-- [ ] If it rejects: move both fields under `metadata.claude-code:` or drop `argument-hint`, update structure test + AGENTS.md "What this repo is"
-- [ ] Add the validate step to `test.yml` (pinned version)
-- [ ] upstream-watch prompt already covers spec changes; link this task from AGENTS.md
+- [x] Run `skills-ref validate` locally on one skill; record the result
+- [x] If it rejects: move both fields under `metadata.claude-code:` or drop `argument-hint`, update structure test + AGENTS.md "What this repo is"
+- [x] Add the validate step to `test.yml` (pinned version)
+- [x] upstream-watch prompt already covers spec changes; link this task from AGENTS.md
 
 ### Verification
 ```bash
