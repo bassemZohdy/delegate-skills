@@ -535,10 +535,10 @@ bash tests/run-tests.sh
 
 
 ## [TASK-27] Choose and add a LICENSE (owner decision; blocks every registry)
-- status: pending
+- status: completed
 - priority: P1
-- owner: (none)
-- agent: none
+- owner: (cleared)
+- agent: claude-code / claude-sonnet-5-5
 - started: none
 - timeout: 1800
 - worktree: none
@@ -546,6 +546,7 @@ bash tests/run-tests.sh
 - base_sha: none
 - dirty_tree: false
 - handoff: none
+- outcome: MIT LICENSE added at the owner's choice; all 8 skills already declared license: MIT; structure test pins it
 - output_ref: LICENSE
 - retries: 0
 - depends_on: []
@@ -559,9 +560,9 @@ The repo has no LICENSE file. AGENTS.md notes existing MIT declarations are 'sub
 A LICENSE file exists at the repo root and every skill's `license:` frontmatter and manifest `license` field names the same license.
 
 ### Sub-tasks
-- [ ] Owner decides the license and completes the provenance review AGENTS.md mentions
-- [ ] Add LICENSE; align `license:` in all 8 SKILL.md files and the README badge/text
-- [ ] Re-run `bash helpers/scripts/sync-skills.sh`
+- [x] Owner decides the license and completes the provenance review AGENTS.md mentions
+- [x] Add LICENSE; align `license:` in all 8 SKILL.md files and the README badge/text
+- [x] Re-run `bash helpers/scripts/sync-skills.sh`
 
 ### Verification
 ```bash
@@ -571,10 +572,10 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-28] Add Claude Code plugin and marketplace manifests
-- status: pending
+- status: completed
 - priority: P1
-- owner: (none)
-- agent: none
+- owner: (cleared)
+- agent: claude-code / claude-sonnet-5-5
 - started: none
 - timeout: 1800
 - worktree: none
@@ -582,6 +583,7 @@ bash tests/run-tests.sh
 - base_sha: none
 - dirty_tree: false
 - handoff: none
+- outcome: Claude plugin and marketplace manifests added; claude plugin validate passes; version pinned to DELEGATE_VERSION by test
 - output_ref: .claude-plugin/plugin.json, .claude-plugin/marketplace.json, tests/test-structure.sh, docs/install.md
 - retries: 0
 - depends_on: [TASK-27]
@@ -595,10 +597,10 @@ The repo has no `.claude-plugin/`, so `/plugin marketplace add bassemZohdy/deleg
 `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` exist (`source: ./`), `/plugin install` exposes the eight delegate-to-* skills, and a structure test pins the manifest version to `DELEGATE_VERSION`.
 
 ### Sub-tasks
-- [ ] Write plugin.json (name, version = DELEGATE_VERSION, description, author, homepage, license) and marketplace.json
-- [ ] Extend tests/test-structure.sh: manifest JSON parses and version matches the skills' metadata.version
-- [ ] Document `/plugin marketplace add` and `/plugin install` in docs/install.md
-- [ ] Run `claude plugin validate .` if available
+- [x] Write plugin.json (name, version = DELEGATE_VERSION, description, author, homepage, license) and marketplace.json
+- [x] Extend tests/test-structure.sh: manifest JSON parses and version matches the skills' metadata.version
+- [x] Document `/plugin marketplace add` and `/plugin install` in docs/install.md
+- [x] Run `claude plugin validate .` if available
 
 ### Verification
 ```bash
@@ -608,10 +610,10 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-29] Add Codex plugin manifest and marketplace file
-- status: pending
+- status: completed
 - priority: P2
-- owner: (none)
-- agent: none
+- owner: (cleared)
+- agent: claude-code / claude-sonnet-5-5
 - started: none
 - timeout: 1800
 - worktree: none
@@ -619,6 +621,7 @@ bash tests/run-tests.sh
 - base_sha: none
 - dirty_tree: false
 - handoff: none
+- outcome: Codex manifests added; installs 8 skills on codex-cli 0.167.0; version pinned by test
 - output_ref: .codex-plugin/plugin.json, .agents/plugins/marketplace.json, tests/test-structure.sh, docs/install.md
 - retries: 0
 - depends_on: [TASK-27]
@@ -632,9 +635,9 @@ Codex reads `.agents/skills`, which this repo already mirrors from `skills/`, bu
 Both Codex files exist and parse, their version equals `DELEGATE_VERSION`, and the skills resolve under `.agents/skills`.
 
 ### Sub-tasks
-- [ ] Write `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json`
-- [ ] Extend the structure test to pin the Codex manifest version to DELEGATE_VERSION
-- [ ] Install once in Codex and confirm delegate-to-codex is discovered; record the Codex version tried in docs/install.md
+- [x] Write `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json`
+- [x] Extend the structure test to pin the Codex manifest version to DELEGATE_VERSION
+- [x] Install once in Codex and confirm delegate-to-codex is discovered; record the Codex version tried in docs/install.md
 
 ### Verification
 ```bash
@@ -645,10 +648,10 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-30] Security review and SECURITY.md before public listing
-- status: pending
+- status: completed
 - priority: P1
-- owner: (none)
-- agent: none
+- owner: (cleared)
+- agent: claude-code / claude-sonnet-5-5
 - started: none
 - timeout: 1800
 - worktree: none
@@ -656,6 +659,7 @@ bash tests/run-tests.sh
 - base_sha: none
 - dirty_tree: false
 - handoff: none
+- outcome: SECURITY.md added with threat model and review status; shellcheck 0.11.0 clean at warning level; no high-severity finding
 - output_ref: SECURITY.md, README.md, helpers/scripts/delegate.sh
 - retries: 0
 - depends_on: []
@@ -669,10 +673,10 @@ bash tests/run-tests.sh
 SECURITY.md states the threat model (worktrees are not a security boundary, the two opt-in variables, symlink and traversal checks, no OS sandbox) and a reporting contact, and a review of delegate.sh has no unresolved high-severity finding.
 
 ### Sub-tasks
-- [ ] Review delegate.sh for command injection, unquoted expansions, temp-file and symlink handling, and the generated supervisor script
-- [ ] Write SECURITY.md from the 'Launch safety and compatibility' section of AGENTS.md plus a reporting contact
-- [ ] Link SECURITY.md from README.md
-- [ ] Add any fixes as separate TASK blocks
+- [x] Review delegate.sh for command injection, unquoted expansions, temp-file and symlink handling, and the generated supervisor script
+- [x] Write SECURITY.md from the 'Launch safety and compatibility' section of AGENTS.md plus a reporting contact
+- [x] Link SECURITY.md from README.md
+- [x] Add any fixes as separate TASK blocks
 
 ### Verification
 ```bash
@@ -681,10 +685,10 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-31] Set GitHub description and topics; decide master to main rename
-- status: pending
+- status: in_progress
 - priority: P2
-- owner: (none)
-- agent: none
+- owner: (cleared)
+- agent: claude-code / claude-sonnet-5-5
 - started: none
 - timeout: 1800
 - worktree: none
@@ -692,6 +696,7 @@ bash tests/run-tests.sh
 - base_sha: none
 - dirty_tree: false
 - handoff: none
+- outcome: workflow now triggers on main and master. Description, topics and the branch rename could not be done from this session (the GitHub proxy blocks repository settings writes); owner steps below
 - output_ref: docs/install.md
 - retries: 0
 - depends_on: []
@@ -705,8 +710,8 @@ Discoverability on GitHub and in registries relies on the repo description and t
 The GitHub repo has a description and topics (for example agent-skills, claude-code, codex, delegation), and the branch decision is recorded in docs/install.md.
 
 ### Sub-tasks
-- [ ] Set description and topics through the repo settings or `gh api -X PUT repos/bassemZohdy/delegate-skills/topics`
-- [ ] Decide whether to rename master to main; if yes, update workflows, docs and raw URLs in the same change
+- [ ] Owner: set description and topics (Settings, or `gh repo edit bassemZohdy/delegate-skills --description '…' --add-topic agent-skills`)
+- [ ] Owner: decided to rename master to main (2026-11-07); workflow already triggers on both. Rename in Settings > Branches, then drop `master` from test.yml and re-check docs for raw URLs
 
 ### Verification
 ```bash
@@ -714,10 +719,10 @@ gh api repos/bassemZohdy/delegate-skills --jq '.description, .topics'
 ```
 
 ## [TASK-32] Verify single-skill `npx skills add` and submit to skills.sh and the Anthropic directory
-- status: pending
+- status: in_progress
 - priority: P2
-- owner: (none)
-- agent: none
+- owner: (cleared)
+- agent: claude-code / claude-sonnet-5-5
 - started: none
 - timeout: 1800
 - worktree: none
@@ -725,6 +730,7 @@ gh api repos/bassemZohdy/delegate-skills --jq '.description, .topics'
 - base_sha: none
 - dirty_tree: false
 - handoff: none
+- outcome: single-skill npx skills add verified (SKILL.md, workflow.md, scripts/delegate.sh fetched); README and docs updated; owner submission to the Anthropic directory remains
 - output_ref: README.md, docs/install.md
 - retries: 0
 - depends_on: [TASK-28, TASK-30]
@@ -738,8 +744,8 @@ AGENTS.md says single-skill installers fetch only the named subdirectory, which 
 `npx skills add bassemZohdy/delegate-skills --skill delegate-to-codex` installs a working skill in a clean directory, the README lists the install line, and the directory submission reference is recorded.
 
 ### Sub-tasks
-- [ ] Run the single-skill install in a clean directory and confirm workflow.md and scripts/delegate.sh resolve
-- [ ] Add the install line to README.md and docs/install.md
+- [x] Run the single-skill install in a clean directory and confirm workflow.md and scripts/delegate.sh resolve
+- [x] Add the install line to README.md and docs/install.md
 - [ ] Owner submits to the Anthropic plugin directory after the license, manifest and security tasks are done and records the reference in docs/install.md
 
 ### Verification

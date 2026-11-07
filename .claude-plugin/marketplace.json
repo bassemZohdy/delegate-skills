@@ -1,0 +1,11 @@
+{
+  "name": "delegate-skills",
+  "owner": { "name": "Bassem Zohdy" },
+  "plugins": [
+    {
+      "name": "delegate-skills",
+      "source": "./",
+      "description": "Delegate coding tasks to background agent CLIs (opencode, pi, mimo, hermes, kimi, codex, agy) with git worktree isolation, a shared TODO.md ledger and a tested launcher."
+    }
+  ]
+}

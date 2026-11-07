@@ -1,0 +1,10 @@
+{
+  "name": "delegate-skills",
+  "version": "1.4.0",
+  "description": "Delegate coding tasks to background agent CLIs (opencode, pi, mimo, hermes, kimi, codex, agy) with git worktree isolation, a shared TODO.md ledger and a tested launcher.",
+  "author": { "name": "Bassem Zohdy" },
+  "homepage": "https://github.com/bassemZohdy/delegate-skills",
+  "repository": "https://github.com/bassemZohdy/delegate-skills",
+  "license": "MIT",
+  "keywords": ["delegation", "agents", "worktree", "codex", "opencode"]
+}

@@ -53,6 +53,23 @@ The skills conform to the [agentskills.io open standard](https://agentskills.io/
 
 ## Quick start
 
+### Plugin install (Claude Code and Codex)
+
+```bash
+# Claude Code
+/plugin marketplace add bassemZohdy/delegate-skills
+/plugin install delegate-skills --marketplace bassemZohdy/delegate-skills
+
+# Codex (verified on codex-cli 0.167.0)
+codex plugin marketplace add bassemZohdy/delegate-skills
+codex plugin add delegate-skills@delegate-skills
+
+# Any skills.sh-compatible agent, one skill only
+npx skills add bassemZohdy/delegate-skills --skill delegate-to-codex
+```
+
+The plugin installs all eight skills. Use the manual options below for other tools or a custom path.
+
 ### Cross-tool install (recommended)
 
 Installs to `~/.agents/skills/` — works natively in OpenCode, OpenAI Codex, pi, Gemini CLI, Kimi, and any [agentskills.io-compliant tool](https://agentskills.io/clients.md).
@@ -299,7 +316,11 @@ gh label create upstream-change --color D93F0B  # safe-outputs cannot create lab
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for the threat model, the two opt-in variables and how to report a vulnerability.
 
 ## Launch safety and compatibility
 

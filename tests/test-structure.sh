@@ -876,6 +876,27 @@ for f in "$PROJECT_ROOT"/skills/delegate-to-*/SKILL.md "$PROJECT_ROOT/helpers/he
     || fail "$rel version '$v' differs from DELEGATE_VERSION '$launcher_version' in helpers/scripts/delegate.sh"
 done
 
+# ─── Plugin manifests: valid JSON, version == launcher version, license present ──
+for m in .claude-plugin/plugin.json .claude-plugin/marketplace.json .codex-plugin/plugin.json .agents/plugins/marketplace.json; do
+  if "$PYTHON" -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$PROJECT_ROOT/$m" 2>/dev/null; then
+    pass "$m is valid JSON"
+  else
+    fail "$m is missing or invalid JSON"
+  fi
+done
+for m in .claude-plugin/plugin.json .codex-plugin/plugin.json; do
+  mv=$("$PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("version",""))' "$PROJECT_ROOT/$m" 2>/dev/null)
+  [ -n "$launcher_version" ] && [ "$mv" = "$launcher_version" ] \
+    && pass "$m version $mv matches DELEGATE_VERSION" \
+    || fail "$m version '$mv' differs from DELEGATE_VERSION '$launcher_version'"
+done
+if [ -s "$PROJECT_ROOT/LICENSE" ] && grep -q '^MIT License' "$PROJECT_ROOT/LICENSE" \
+   && ! grep -L '^license: MIT$' "$PROJECT_ROOT"/skills/delegate-to-*/SKILL.md | grep -q .; then
+  pass "LICENSE is MIT and every skill declares license: MIT"
+else
+  fail "LICENSE missing or a skill's license: differs from MIT"
+fi
+
 # ─── Hermes helper / generic prompt: full ledger fields, no first-launch --continue ──
 for f in helpers/hermes/delegate-tasks/SKILL.md helpers/adapters/generic-prompt.md; do
   missing=""

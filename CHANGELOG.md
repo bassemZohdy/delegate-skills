@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- MIT `LICENSE`. `SECURITY.md` with the threat model, review status and reporting route.
+- Claude Code plugin and marketplace manifests (`.claude-plugin/`) and Codex manifests (`.codex-plugin/`, `.agents/plugins/marketplace.json`); structure tests pin their version to `DELEGATE_VERSION`.
+
+### Changed
+- The test workflow triggers on `main` as well as `master`, ready for the branch rename.
+
 ## [1.4.0] — 2026-11-06
 
 Review pass after the fail-closed delegation PR: the tested launcher now ships

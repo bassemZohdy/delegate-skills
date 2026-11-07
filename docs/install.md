@@ -162,6 +162,17 @@ Kimi scans `~/.agents/skills/` and `~/.config/agents/skills/` in its "generic gr
 
 ---
 
+## Plugin install (Claude Code, Codex)
+
+```bash
+/plugin marketplace add bassemZohdy/delegate-skills                 # Claude Code
+/plugin install delegate-skills --marketplace bassemZohdy/delegate-skills
+codex plugin marketplace add bassemZohdy/delegate-skills            # Codex
+codex plugin add delegate-skills@delegate-skills
+```
+
+The manifests are `.claude-plugin/`, `.codex-plugin/` and `.agents/plugins/marketplace.json`. Their version equals `DELEGATE_VERSION`; Codex caches an install by it. Verified: Codex (codex-cli 0.167.0) installs the eight skills, and `npx skills add <repo> --skill delegate-to-codex` fetches `SKILL.md`, `workflow.md` and `scripts/delegate.sh` into a clean directory.
+
 ## skills.sh CLI
 
 [skills.sh](https://skills.sh) is a cross-tool skill directory/CLI (`vercel-labs/skills`)

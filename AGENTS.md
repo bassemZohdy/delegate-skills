@@ -243,5 +243,7 @@ concurrent hostile process modifying paths after validation.
 Maintain `skills/` (and `helpers/scripts/delegate.sh`) as the source and run
 `bash helpers/scripts/sync-skills.sh` after edits. `--check` verifies distributed
 workflow and launcher copies and `.agents/skills/` without writing files. Copies remain self-contained for single-skill installs.
-No root license file is added in this change: the existing MIT declarations
-remain subject to the owner's licensing/provenance review.
+The repository is MIT licensed (`LICENSE`); every skill declares `license: MIT`.
+Plugin manifests (`.claude-plugin/`, `.codex-plugin/`, `.agents/plugins/`) carry
+the same version as `DELEGATE_VERSION`; bump all of them together (a structure
+test checks it). Codex caches an install by that version.
