@@ -62,7 +62,7 @@ codex exec resume --help
 
 ### Safety defaults
 
-Prefer the tested launcher (`scripts/delegate.sh` when installed in the project).
+Prefer the bundled launcher (`$DELEGATE_SH`, resolved at the top of `workflow.md`).
 For a manual launch, first verify a positive `TASK-N` identifier, real delegation
 directories/state files without symlinks, and that the worktree belongs to this
 repository and the expected runtime/task branch. Refuse an unrelated directory.

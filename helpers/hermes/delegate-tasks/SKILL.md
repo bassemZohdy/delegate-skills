@@ -27,7 +27,7 @@ Delegate a coding task to a background agent CLI, isolated in a git worktree. Th
 | Runtime | Command | Install |
 |---------|---------|---------|
 | `opencode` | `opencode run` | `npm install -g opencode-ai` |
-| `pi` | `pi -p` | `bun install -g @earendil-works/pi-coding-agent` |
+| `pi` | `pi -p` | `npm install -g @earendil-works/pi-coding-agent` |
 | `mimo` | `mimo run` | `npm install -g @mimo-ai/cli` |
 | `hermes` | `hermes chat -q` | built-in |
 | `kimi` | `kimi -p` | see Kimi Code docs |

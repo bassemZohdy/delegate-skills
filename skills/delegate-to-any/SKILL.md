@@ -63,7 +63,7 @@ Take the **first hit** from the list above. Tell the user which runtime was sele
   "checked": ["oh-my-opencode", "oh-my-openagent", "opencode", "pi", "mimo", "hermes", "kimi", "codex", "agy"],
   "install_options": [
     "opencode  →  npm install -g opencode-ai",
-    "pi        →  bun install -g @earendil-works/pi-coding-agent",
+    "pi        →  npm install -g @earendil-works/pi-coding-agent",
     "mimo      →  npm install -g @mimo-ai/cli",
     "codex     →  npm install -g @openai/codex",
     "hermes    →  see Hermes Agent documentation",
@@ -94,7 +94,7 @@ If no model was requested, omit the model flag entirely for all runtimes.
 
 ### Safety defaults
 
-Prefer the tested launcher (`scripts/delegate.sh` when installed in the project).
+Prefer the bundled launcher (`$DELEGATE_SH`, resolved at the top of `workflow.md`).
 For a manual launch, first verify a positive `TASK-N` identifier, real delegation
 directories/state files without symlinks, and that the worktree belongs to this
 repository and the expected runtime/task branch. Refuse an unrelated directory.

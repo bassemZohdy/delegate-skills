@@ -388,7 +388,7 @@ EOF
 ERROR: Runtime '$RUNTIME' not found on PATH.
 Install it and ensure it is accessible, then retry.
   opencode  ->  npm install -g opencode-ai
-  pi        ->  bun install -g @earendil-works/pi-coding-agent
+  pi        ->  npm install -g @earendil-works/pi-coding-agent
   mimo      ->  npm install -g @mimo-ai/cli
   codex     ->  npm install -g @openai/codex
   hermes    ->  see Hermes Agent documentation

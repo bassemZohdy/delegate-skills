@@ -6,7 +6,7 @@ Each skill delegates to a different CLI. Install whichever ones you need:
 
 ```bash
 npm install -g opencode-ai                       # opencode
-bun install -g @earendil-works/pi-coding-agent   # pi
+npm install -g @earendil-works/pi-coding-agent   # pi
 npm install -g @mimo-ai/cli                      # mimo
 npm install -g @openai/codex                     # codex
 # hermes, kimi, agy: see their respective documentation

@@ -660,6 +660,27 @@ grep -q "CLI differences\|Run command" "$PROJECT_ROOT/AGENTS.md" \
   && pass "AGENTS.md has CLI differences table" \
   || fail "AGENTS.md missing CLI differences table"
 
+# README runtime links must not point at domains that do not resolve (found by
+# curl in the 2026-11 review: hermes.agent, earendil.works; agy.dev, mimo.ai and
+# kimi.ai only redirect to unrelated pages). Real URLs live in upstream-sources.yml.
+if grep -qE 'https://(hermes\.agent|earendil\.works|agy\.dev|mimo\.ai|kimi\.ai)' "$PROJECT_ROOT/README.md"; then
+  fail "README.md links a runtime homepage that does not resolve (use the URLs in .github/upstream-sources.yml)"
+else
+  pass "README.md runtime links avoid the known-dead domains"
+fi
+# pi is on npm: one install command everywhere (bun also works with npm packages).
+if grep -rqE 'bun install -g @earendil-works' "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/docs" "$PROJECT_ROOT/skills" "$PROJECT_ROOT/helpers"; then
+  fail "a file still documents 'bun install -g' for pi (the package is installed with npm install -g)"
+else
+  pass "pi install command is npm install -g everywhere"
+fi
+# Skills ship their own launcher; "when installed in the project" was the pre-1.4 wording.
+if grep -rq 'when installed in the project' "$PROJECT_ROOT/skills"; then
+  fail "a SKILL.md still says to prefer the launcher 'when installed in the project' (it is bundled)"
+else
+  pass "SKILL.md files refer to the bundled launcher (\$DELEGATE_SH)"
+fi
+
 # ─── Shell script shebangs ────────────────────────────────────────────────────
 
 for script in tests/run-tests.sh tests/test-structure.sh helpers/scripts/delegate.sh; do

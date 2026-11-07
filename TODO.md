@@ -268,11 +268,13 @@ bash tests/run-tests.sh
 ```
 
 ## [TASK-20] Docs: dead runtime links, stale repo tree, Hermes path, launcher phrasing, pi install command
-- status: pending
+- status: completed
 - priority: P2
-- owner: (unassigned)
-- agent: none
-- started: none
+- owner: (cleared)
+- reviewed: 2026-11-07T08:30:00Z
+- outcome: README runtime links use curl-verified URLs; repo tree lists .github/ and the new tests; Hermes quick start resolves HERMES_HOME; all 8 skills say "bundled launcher ($DELEGATE_SH)"; pi install is npm everywhere; three structure checks pin it
+- agent: claude-code / claude-sonnet-5-5
+- started: 2026-11-07T08:05:00Z
 - timeout: 600
 - worktree: none
 - branch: none
@@ -295,11 +297,11 @@ bash tests/run-tests.sh
 Links verified with curl, one install command per runtime everywhere, repo tree regenerated, Hermes snippet uses `${HERMES_HOME:-$HOME/.hermes}`, the launcher sentence reads "Prefer the bundled launcher (`$DELEGATE_SH`)".
 
 ### Sub-tasks
-- [ ] README links → manifest URLs; add a structure test that every README runtime link appears in `upstream-sources.yml`
-- [ ] Regenerate the README tree; add `.github/` section
-- [ ] Hermes quick start → HERMES_HOME form
-- [ ] Replace the launcher sentence in the 8 skills (and `.agents` mirror via sync)
-- [ ] Pick `npm install -g @earendil-works/pi-coding-agent` (works with bun too) and apply it everywhere, including `delegate.sh`'s not-found hint
+- [x] README links → manifest URLs; offline structure test forbids the known-dead domains
+- [x] Regenerate the README tree; add `.github/` section
+- [x] Hermes quick start → HERMES_HOME form
+- [x] Replace the launcher sentence in the 8 skills (and `.agents` mirror via sync)
+- [x] Pick `npm install -g @earendil-works/pi-coding-agent` and apply it everywhere, including `delegate.sh`'s not-found hint
 
 ### Verification
 ```bash

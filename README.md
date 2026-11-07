@@ -28,11 +28,11 @@ The agent works independently while you keep collaborating with your AI assistan
 | `delegate-to-any` | auto-selects best available | install any runtime below |
 | `delegate-to-opencode` | [OpenCode](https://opencode.ai) | `npm install -g opencode-ai` |
 | `delegate-to-codex` | [OpenAI Codex CLI](https://github.com/openai/codex) | `npm install -g @openai/codex` |
-| `delegate-to-pi` | [Pi](https://earendil.works) | `bun install -g @earendil-works/pi-coding-agent` |
-| `delegate-to-mimo` | [MiMo](https://mimo.ai) | `npm install -g @mimo-ai/cli` |
-| `delegate-to-hermes` | [Hermes Agent](https://hermes.agent) | see Hermes docs |
-| `delegate-to-kimi` | [Kimi Code](https://kimi.ai) | see Kimi docs |
-| `delegate-to-agy` | [Agy](https://agy.dev) | see Agy docs |
+| `delegate-to-pi` | [Pi](https://pi.dev) | `npm install -g @earendil-works/pi-coding-agent` |
+| `delegate-to-mimo` | [MiMo](https://mimo.xiaomi.com/mimocode) | `npm install -g @mimo-ai/cli` |
+| `delegate-to-hermes` | [Hermes Agent](https://github.com/NousResearch/hermes-agent) | see Hermes docs |
+| `delegate-to-kimi` | [Kimi Code](https://moonshotai.github.io/kimi-code/) | see Kimi docs |
+| `delegate-to-agy` | [Agy](https://antigravity.google/docs/cli/) | see Agy docs |
 
 ---
 
@@ -108,7 +108,9 @@ Claude Code writes the handoff document, creates the worktree, launches opencode
 ### Hermes Agent
 
 ```bash
-cp -r helpers/hermes/delegate-tasks ~/.hermes/skills/autonomous-ai-agents/
+HERMES_SKILLS="${HERMES_HOME:-$HOME/.hermes}/skills"    # Windows default: %LOCALAPPDATA%\hermes
+mkdir -p "$HERMES_SKILLS/autonomous-ai-agents"
+cp -r helpers/hermes/delegate-tasks "$HERMES_SKILLS/autonomous-ai-agents/"
 ```
 
 ```
@@ -184,7 +186,16 @@ Each launch gets a background watchdog: SIGTERM after the configured timeout, SI
 delegate-skills/
 ├── README.md
 ├── AGENTS.md                        # agent-facing conventions and CLI reference table
+├── CHANGELOG.md                     # release history
 ├── TODO.md                          # task ledger (append-only when skills are in use)
+├── TODO-ARCHIVE.md                  # completed tasks moved out of TODO.md
+│
+├── .github/
+│   ├── upstream-sources.yml         # per-runtime docs/changelog URLs, verified versions, required flags
+│   └── workflows/
+│       ├── test.yml                 # mock test suite, Ubuntu + Windows Git Bash
+│       ├── cli-contract.yml         # weekly: latest npm CLIs vs the flags delegate.sh passes
+│       └── upstream-watch.md        # weekly gh-aw agentic workflow (compile to .lock.yml)
 │
 ├── skills/                          # installable skills — copy any single folder, or all of them
 │   ├── shared/
@@ -219,6 +230,8 @@ delegate-skills/
     ├── test-structure.sh            # structure/text-pattern assertions
     ├── test-behavior.sh             # behavioral tests — executes delegate.sh for real
     ├── test-safety.sh               # permission defaults, isolation failures, input validation
+    ├── test-upstream.sh             # upstream manifest + contract checker (no network)
+    ├── check-cli-contract.py        # installed CLIs' --help vs the flags delegate.sh passes
     └── fixtures/
         └── mock-bin/                # mock CLI binaries used by test-behavior.sh
 ```
